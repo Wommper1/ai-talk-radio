@@ -20,7 +20,7 @@ This list tracks the showrunner, scheduler, stability, performance, and control-
   - Acceptance: interrupted writes leave either the previous valid file or the complete new file.
 - [x] 8. Validate generation job IDs and reject collisions before creating paths or cancellation state.
   - Acceptance: unsafe and duplicate IDs receive a clear client error.
-- [ ] 9. Initialize source control with generated and private files excluded.
+- [x] 9. Initialize source control with generated and private files excluded.
   - Acceptance: source changes can be reviewed and reverted without tracking shows, music, secrets, models, or rendered media.
 
 ## Performance
