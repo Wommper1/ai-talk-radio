@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+  <rect width="1200" height="720" fill="#0b1510"/>
+  <path d="M34 575C169 508 232 545 328 466C430 382 503 434 599 358C711 270 814 305 949 219C1027 169 1102 173 1180 137V720H0V613Z" fill="#10251a"/>
+  <path d="M0 176C137 193 215 159 330 195C447 232 515 186 643 211C765 234 877 187 988 213C1073 232 1135 214 1200 191V0H0Z" fill="#122119"/>
+  <path d="M0 486C160 439 285 459 403 406C527 350 592 379 708 323C822 268 957 285 1200 198" fill="none" stroke="#183426" stroke-width="40" opacity=".7"/>
+  <path d="M58 662C173 585 276 580 343 501C420 411 444 319 552 269C637 230 712 254 793 199C881 140 934 81 1151 40" fill="none" stroke="#173b3a" stroke-width="27"/>
+  <path d="M58 662C173 585 276 580 343 501C420 411 444 319 552 269C637 230 712 254 793 199C881 140 934 81 1151 40" fill="none" stroke="#245a58" stroke-width="7" opacity=".9"/>
+  <g fill="#1f3828" stroke="#2d503a" stroke-width="3">
+    <path d="M153 179l25-70 25 70h-14l24 61h-70l24-61z"/>
+    <path d="M226 157l22-61 22 61h-12l22 55h-64l22-55z"/>
+    <path d="M876 353l25-70 25 70h-14l24 61h-70l24-61z"/>
+    <path d="M947 382l22-61 22 61h-12l22 55h-64l22-55z"/>
+    <path d="M1016 323l26-73 26 73h-15l25 63h-72l25-63z"/>
+  </g>
+  <g fill="#1a2c21" stroke="#425849" stroke-width="3">
+    <path d="M483 87h104v81H483z"/>
+    <path d="M462 106h27v62h-27zM581 106h27v62h-27z"/>
+    <path d="M472 88l13-25 13 25zM572 88l13-25 13 25z"/>
+    <path d="M524 126h23v42h-23z" fill="#0b1510"/>
+  </g>
+  <g fill="#27362b" stroke="#59665d" stroke-width="2">
+    <path d="M238 280h77v52h-77zM253 252h48v28h-48z"/>
+    <path d="M866 524h82v57h-82zM882 495h50v29h-50z"/>
+    <path d="M133 487h74v51h-74zM149 461h42v26h-42z"/>
+  </g>
+  <g fill="none" stroke="#4d594e" stroke-width="4" opacity=".65">
+    <path d="M291 322C378 270 445 232 512 163"/>
+    <path d="M580 163C690 223 795 292 900 349"/>
+    <path d="M901 365C904 431 905 478 907 530"/>
+    <path d="M283 333C236 390 202 438 171 492"/>
+  </g>
+  <g fill="#9b8748" opacity=".22">
+    <circle cx="535" cy="128" r="42"/><circle cx="275" cy="292" r="37"/><circle cx="907" cy="552" r="41"/>
+  </g>
+</svg>

@@ -1,0 +1,466 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/world_map.gd" id="2_map"]
+[ext_resource type="Texture2D" path="res://assets/realm-map.svg" id="3_map_texture"]
+[ext_resource type="Texture2D" path="res://assets/realm-icon.svg" id="4_icon"]
+
+[node name="RealmClient" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_main")
+
+[node name="Backdrop" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.027, 0.043, 0.039, 1)
+
+[node name="Page" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 22.0
+offset_top = 18.0
+offset_right = -22.0
+offset_bottom = -18.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Stack" type="VBoxContainer" parent="Page"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="PanelContainer" parent="Page/Stack" groups=["panel"]]
+custom_minimum_size = Vector2(0, 70)
+layout_mode = 2
+
+[node name="Row" type="HBoxContainer" parent="Page/Stack/Header"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Mark" type="TextureRect" parent="Page/Stack/Header/Row"]
+custom_minimum_size = Vector2(44, 44)
+layout_mode = 2
+texture = ExtResource("4_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Titles" type="VBoxContainer" parent="Page/Stack/Header/Row"]
+layout_mode = 2
+
+[node name="RealmName" type="Label" parent="Page/Stack/Header/Row/Titles"]
+layout_mode = 2
+text = "KING ORION'S REALM"
+theme_override_colors/font_color = Color(0.96, 0.8, 0.35, 1)
+theme_override_font_sizes/font_size = 24
+
+[node name="CampaignLabel" type="Label" parent="Page/Stack/Header/Row/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Connecting to the realm..."
+theme_override_colors/font_color = Color(0.65, 0.72, 0.68, 1)
+
+[node name="Spacer" type="Control" parent="Page/Stack/Header/Row"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ConnectionLabel" type="Label" parent="Page/Stack/Header/Row"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "OFFLINE"
+
+[node name="RefreshButton" type="Button" parent="Page/Stack/Header/Row"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 40)
+layout_mode = 2
+text = "Refresh"
+
+[node name="Body" type="HSplitContainer" parent="Page/Stack"]
+layout_mode = 2
+size_flags_vertical = 3
+split_offset = 830
+
+[node name="Left" type="VBoxContainer" parent="Page/Stack/Body"]
+custom_minimum_size = Vector2(660, 0)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="MapFrame" type="PanelContainer" parent="Page/Stack/Body/Left" groups=["panel"]]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MapLayer" type="Control" parent="Page/Stack/Body/Left/MapFrame"]
+custom_minimum_size = Vector2(0, 350)
+layout_mode = 2
+clip_contents = true
+
+[node name="Texture" type="TextureRect" parent="Page/Stack/Body/Left/MapFrame/MapLayer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("3_map_texture")
+expand_mode = 1
+stretch_mode = 6
+modulate = Color(0.72, 0.76, 0.68, 1)
+
+[node name="WorldMap" type="Control" parent="Page/Stack/Body/Left/MapFrame/MapLayer"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 2
+script = ExtResource("2_map")
+
+[node name="LocationBand" type="PanelContainer" parent="Page/Stack/Body/Left" groups=["panel"]]
+custom_minimum_size = Vector2(0, 82)
+layout_mode = 2
+
+[node name="LocationStack" type="VBoxContainer" parent="Page/Stack/Body/Left/LocationBand"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="LocationName" type="Label" parent="Page/Stack/Body/Left/LocationBand/LocationStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "The Wildlands"
+theme_override_colors/font_color = Color(0.96, 0.8, 0.35, 1)
+theme_override_font_sizes/font_size = 17
+
+[node name="LocationDetails" type="Label" parent="Page/Stack/Body/Left/LocationBand/LocationStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Select a marked place to inspect the live world record."
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.67, 0.73, 0.69, 1)
+
+[node name="LocationActions" type="HBoxContainer" parent="Page/Stack/Body/Left/LocationBand/LocationStack"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TravelButton" type="Button" parent="Page/Stack/Body/Left/LocationBand/LocationStack/LocationActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 34)
+layout_mode = 2
+text = "Travel here"
+disabled = true
+
+[node name="InspectButton" type="Button" parent="Page/Stack/Body/Left/LocationBand/LocationStack/LocationActions"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 34)
+layout_mode = 2
+text = "Investigate"
+disabled = true
+
+[node name="LocationActionState" type="Label" parent="Page/Stack/Body/Left/LocationBand/LocationStack/LocationActions"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Select a destination"
+horizontal_alignment = 2
+theme_override_colors/font_color = Color(0.58, 0.64, 0.6, 1)
+
+[node name="Right" type="VBoxContainer" parent="Page/Stack/Body"]
+custom_minimum_size = Vector2(350, 0)
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PlayerBand" type="PanelContainer" parent="Page/Stack/Body/Right" groups=["panel"]]
+custom_minimum_size = Vector2(0, 92)
+layout_mode = 2
+
+[node name="PlayerStack" type="VBoxContainer" parent="Page/Stack/Body/Right/PlayerBand"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="PlayerHeading" type="Label" parent="Page/Stack/Body/Right/PlayerBand/PlayerStack"]
+layout_mode = 2
+text = "PLAYER"
+theme_override_colors/font_color = Color(0.96, 0.8, 0.35, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="PlayerName" type="Label" parent="Page/Stack/Body/Right/PlayerBand/PlayerStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Waiting for the world snapshot"
+theme_override_font_sizes/font_size = 17
+
+[node name="PlayerDetails" type="Label" parent="Page/Stack/Body/Right/PlayerBand/PlayerStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Location: Unknown"
+theme_override_colors/font_color = Color(0.67, 0.73, 0.69, 1)
+
+[node name="PartyBand" type="PanelContainer" parent="Page/Stack/Body/Right" groups=["panel"]]
+custom_minimum_size = Vector2(0, 92)
+layout_mode = 2
+
+[node name="PartyStack" type="VBoxContainer" parent="Page/Stack/Body/Right/PartyBand"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="PartyHeading" type="Label" parent="Page/Stack/Body/Right/PartyBand/PartyStack"]
+layout_mode = 2
+text = "RESPAWN GUILD"
+theme_override_colors/font_color = Color(0.96, 0.8, 0.35, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="PartyList" type="VBoxContainer" parent="Page/Stack/Body/Right/PartyBand/PartyStack"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ActionTabs" type="TabContainer" parent="Page/Stack/Body/Right"]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+
+[node name="Adventure" type="PanelContainer" parent="Page/Stack/Body/Right/ActionTabs" groups=["panel"]]
+layout_mode = 2
+
+[node name="AdventureStack" type="VBoxContainer" parent="Page/Stack/Body/Right/ActionTabs/Adventure"]
+layout_mode = 2
+theme_override_constants/separation = 7
+
+[node name="EnemyLabel" type="Label" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Roads quiet. No enemy engaged."
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.82, 0.42, 0.4, 1)
+
+[node name="CombatGrid" type="GridContainer" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack"]
+layout_mode = 2
+columns = 3
+theme_override_constants/h_separation = 6
+theme_override_constants/v_separation = 6
+
+[node name="AttackButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/CombatGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+text = "Attack"
+
+[node name="DefendButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/CombatGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+text = "Defend"
+
+[node name="FleeButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/CombatGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+text = "Flee"
+
+[node name="HuntButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/CombatGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+text = "Hunt"
+
+[node name="RestButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/CombatGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+text = "Rest"
+
+[node name="ReviveButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/CombatGrid"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(96, 34)
+layout_mode = 2
+text = "Revive"
+
+[node name="TargetRow" type="HBoxContainer" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TargetInput" type="LineEdit" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/TargetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Person, place, or problem"
+max_length = 120
+
+[node name="TalkButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/TargetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Talk"
+
+[node name="HelpButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/TargetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Help"
+
+[node name="CrimeButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack/TargetRow"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Crime"
+
+[node name="ActionLog" type="RichTextLabel" parent="Page/Stack/Body/Right/ActionTabs/Adventure/AdventureStack"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+scroll_following = true
+text = "[color=#93a198]Choose an action. Outcomes are saved directly to the canonical realm.[/color]"
+
+[node name="Journal" type="PanelContainer" parent="Page/Stack/Body/Right/ActionTabs" groups=["panel"]]
+layout_mode = 2
+
+[node name="QuestScroll" type="ScrollContainer" parent="Page/Stack/Body/Right/ActionTabs/Journal"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="QuestList" type="VBoxContainer" parent="Page/Stack/Body/Right/ActionTabs/Journal/QuestScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="Pack" type="PanelContainer" parent="Page/Stack/Body/Right/ActionTabs" groups=["panel"]]
+layout_mode = 2
+
+[node name="PackStack" type="VBoxContainer" parent="Page/Stack/Body/Right/ActionTabs/Pack"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ItemHeading" type="Label" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack"]
+layout_mode = 2
+text = "SELECT AN ITEM"
+theme_override_colors/font_color = Color(0.96, 0.8, 0.35, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="ItemPicker" type="OptionButton" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ItemActions" type="HBoxContainer" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="UseButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack/ItemActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Use"
+
+[node name="EquipButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack/ItemActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Equip"
+
+[node name="SellButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack/ItemActions"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Sell"
+
+[node name="BuyPotionButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Buy Health Potion - 10 gold"
+
+[node name="InventoryState" type="Label" parent="Page/Stack/Body/Right/ActionTabs/Pack/PackStack"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+text = "Equipment and item results appear here."
+autowrap_mode = 2
+theme_override_colors/font_color = Color(0.67, 0.73, 0.69, 1)
+
+[node name="Radio" type="PanelContainer" parent="Page/Stack/Body/Right/ActionTabs" groups=["panel"]]
+layout_mode = 2
+
+[node name="RadioStack" type="VBoxContainer" parent="Page/Stack/Body/Right/ActionTabs/Radio"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RadioTitle" type="Label" parent="Page/Stack/Body/Right/ActionTabs/Radio/RadioStack"]
+layout_mode = 2
+text = "REALM RECEIVER"
+theme_override_colors/font_color = Color(0.94, 0.53, 0.32, 1)
+
+[node name="ShowTitle" type="Label" parent="Page/Stack/Body/Right/ActionTabs/Radio/RadioStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "No broadcast loaded"
+autowrap_mode = 2
+
+[node name="ShowMeta" type="Label" parent="Page/Stack/Body/Right/ActionTabs/Radio/RadioStack"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "No archive metadata"
+theme_override_colors/font_color = Color(0.58, 0.64, 0.6, 1)
+theme_override_font_sizes/font_size = 11
+
+[node name="RadioRow" type="HBoxContainer" parent="Page/Stack/Body/Right/ActionTabs/Radio/RadioStack"]
+layout_mode = 2
+
+[node name="PlayButton" type="Button" parent="Page/Stack/Body/Right/ActionTabs/Radio/RadioStack/RadioRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(116, 38)
+layout_mode = 2
+text = "Play latest"
+disabled = true
+
+[node name="PlayState" type="Label" parent="Page/Stack/Body/Right/ActionTabs/Radio/RadioStack/RadioRow"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Station link idle"
+horizontal_alignment = 2
+
+[node name="Footer" type="HBoxContainer" parent="Page/Stack"]
+custom_minimum_size = Vector2(0, 28)
+layout_mode = 2
+
+[node name="Status" type="Label" parent="Page/Stack/Footer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Booting world client..."
+
+[node name="Contract" type="Label" parent="Page/Stack/Footer"]
+layout_mode = 2
+text = "world.v1"
+theme_override_colors/font_color = Color(0.49, 0.59, 0.54, 1)
+
+[node name="SnapshotRequest" type="HTTPRequest" parent="."]
+unique_name_in_owner = true
+timeout = 8.0
+use_threads = true
+
+[node name="AudioRequest" type="HTTPRequest" parent="."]
+unique_name_in_owner = true
+timeout = 45.0
+use_threads = true
+body_size_limit = 268435456
+
+[node name="CommandRequest" type="HTTPRequest" parent="."]
+unique_name_in_owner = true
+timeout = 20.0
+use_threads = true
+
+[node name="AudioPlayer" type="AudioStreamPlayer" parent="."]
+unique_name_in_owner = true
+
+[node name="RefreshTimer" type="Timer" parent="."]
+unique_name_in_owner = true
+wait_time = 5.0
+autostart = true

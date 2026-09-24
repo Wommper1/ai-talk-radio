@@ -1,0 +1,61 @@
+{
+  "name": "local-talk-radio",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env ENABLE_HMR=false tsx watch --clear-screen=false --ignore \"**/config.json\" --ignore \"**/shows/**\" --ignore \"**/output/**\" --ignore \"**/commercials/**\" --ignore \"**/memory/**\" --ignore \"**/ads/**\" --ignore \"**/music/**\" --ignore \"**/dist/**\" --ignore \"**/tools/**\" server.ts",
+    "start": "tsx server.ts",
+    "build": "vite build",
+    "serve": "cross-env NODE_ENV=production tsx server.ts",
+    "typecheck": "tsc --noEmit",
+    "doctor": "tsx scripts/doctor.ts",
+    "selftest": "tsx scripts/selftest.ts",
+    "ttstest": "tsx scripts/ttstest.ts",
+    "e2e": "tsx scripts/e2e.ts",
+    "shortcut": "powershell -NoProfile -ExecutionPolicy Bypass -File launcher/install-shortcut.ps1",
+    "icon": "tsx scripts/make-icon.ts",
+    "setup-piper": "tsx scripts/setup-piper.ts",
+    "e2e-live": "tsx scripts/e2e-live.ts",
+    "e2e-callin": "tsx scripts/e2e-callin.ts",
+    "memory": "tsx scripts/memory.ts",
+    "e2e-deepdive": "tsx scripts/e2e-deepdive.ts",
+    "stingtest": "tsx scripts/stingtest.ts",
+    "adtest": "tsx scripts/adtest.ts",
+    "songtest": "tsx scripts/songtest.ts",
+    "modeltest": "tsx scripts/modeltest.ts",
+    "openers": "tsx scripts/openers.ts",
+    "commercials": "tsx scripts/commercials.ts",
+    "dj:export": "tsx scripts/export-dj-training.ts",
+    "dj:eval": "tsx scripts/dj-eval.ts",
+    "orion:export": "tsx scripts/export-orion-training.ts",
+    "orion:eval": "tsx scripts/orion-eval.ts",
+    "world:smoke": "tsx scripts/world-command-smoke.ts"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.14",
+    "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "mpg123-decoder": "^1.0.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.14",
+    "vite": "^6.2.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "cross-env": "^7.0.3",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true
+  }
+}

@@ -1,0 +1,31 @@
+node_modules
+dist
+output
+shows
+config.json
+.env
+.env.local
+_original_backup
+commercials/
+openers/
+memory/*.json
+__pycache__/
+*.pyc
+
+# Piper binary and voice models (~180 MB) — fetched, not source.
+tools/
+
+# Generated from scripts/make-icon.ts
+launcher/icon.png
+launcher/icon.ico
+memory/index.json
+memory/dj-feedback.json
+data/world_api_token.txt
+training/dj-lora/data/
+training/orion-lora/data/
+
+# Your own ad spots — yours, not source.
+ads/
+
+# Your own music — yours, not source.
+music/
