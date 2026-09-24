@@ -43,7 +43,7 @@ import {
   listLanes,
   remember as rememberRunning,
 } from "./server/memory/running.ts";
-import { runProducer, hasBrief, EMPTY_BRIEF, type ProducerBrief } from "./server/pipeline/showrunner.ts";
+import { buildRunSheet, runProducer, hasBrief, EMPTY_BRIEF, type ProducerBrief } from "./server/pipeline/showrunner.ts";
 import {
   audioFor,
   auditBucket,
@@ -171,8 +171,9 @@ import {
 import { STING_LENGTHS, makeSting } from "./server/audio/stings.ts";
 import { applyTone } from "./server/audio/effects.ts";
 import { groupCommercialBreaks } from "./shared/commercial-rotation.ts";
-import { isSafeJobId, shouldWarmUpShow } from "./shared/show-job.ts";
+import { jobIdProblem, shouldWarmUpShow } from "./shared/show-job.ts";
 import { missingModels } from "./shared/model-preflight.ts";
+import { listDrafts, readDraft, removeDraft, saveDraft, type ShowDraft } from "./server/pipeline/drafts.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === "production";
@@ -624,6 +625,48 @@ async function main() {
 
   app.get("/api/shows", (_req, res) => {
     res.json(listShows());
+  });
+
+  app.get("/api/drafts", (_req, res) => res.json(listDrafts()));
+
+  app.delete("/api/drafts/:id", (req, res) => {
+    removeDraft(req.params.id);
+    res.json({ ok: true });
+  });
+
+  app.post("/api/drafts/:id/recover", (req, res) => {
+    const draft = readDraft(req.params.id);
+    if (!draft) return res.status(404).json({ error: "That interrupted show draft was not found." });
+
+    let cursor = 0;
+    const transcript = draft.turns.map((turn) => {
+      const seconds = Math.max(2, turn.text.trim().split(/\s+/).length / 2.6);
+      const line = { start: cursor, end: cursor + seconds, speaker: turn.speaker, hostId: turn.hostId, text: turn.text };
+      cursor = line.end + 0.3;
+      return line;
+    });
+    const id = makeShowId(draft.topic);
+    const show: StoredShow = {
+      id,
+      title: `${draft.topic} (recovered)`,
+      summary: `Recovered ${draft.turns.length} completed turn${draft.turns.length === 1 ? "" : "s"} from an interrupted broadcast.`,
+      topic: draft.topic,
+      station: draft.station,
+      style: draft.style,
+      mood: draft.mood,
+      createdAt: draft.createdAt,
+      duration: Math.max(0, cursor - 0.3),
+      hasAudio: false,
+      hosts: [],
+      outline: [],
+      sources: [],
+      transcript,
+      models: [],
+      generationVersion: CURRENT_SHOW_FORMAT,
+    };
+    saveShow(show);
+    removeDraft(draft.id);
+    res.json(readShow(id));
   });
 
   app.get("/api/shows/:id", (req, res) => {
@@ -1454,12 +1497,8 @@ async function main() {
     if (!topic) {
       return res.status(400).json({ error: "Give the show a topic." });
     }
-    if (!isSafeJobId(jobId)) {
-      return res.status(400).json({ error: "The show job id is not valid." });
-    }
-    if (running.has(jobId)) {
-      return res.status(409).json({ error: "A show with that job id is already running." });
-    }
+    const jobProblem = jobIdProblem(jobId, new Set(running.keys()));
+    if (jobProblem) return res.status(running.has(jobId) ? 409 : 400).json({ error: jobProblem });
 
     // LM Studio exposes the model it can currently serve. Catch a stale saved
     // id before opening an SSE stream and before the listener waits through
@@ -1477,6 +1516,8 @@ async function main() {
         config.llm.model,
         ...config.hosts.map((host) => host.model),
         ...(config.show.useProducer || config.show.useOutline ? [config.llm.producerModel] : []),
+        ...(config.show.generateNotes ? [config.llm.notesModel] : []),
+        ...(config.ads.enabled ? [config.llm.commercialModel] : []),
       ];
       const missing = missingModels(configuredModels, check.models.map((model) => model.id));
       if (missing.length > 0) {
@@ -1775,7 +1816,7 @@ async function main() {
       // underneath them instead. Never awaited: if it is not done in time the
       // first turn pays what it would have paid anyway.
       const hasOpeningSong = speakLive && config.show.openingSong.enabled && Boolean(resolveSongFile(config.show.openingSong.file));
-      const hasWarmupCover = shouldWarmUpShow({ speakLive, hasOpeningAudio, hasOpeningSong });
+      const hasWarmupCover = config.show.warmUpModel && shouldWarmUpShow({ speakLive, hasOpeningAudio, hasOpeningSong });
       const warming = hasWarmupCover
         ? warmUp(config, topic, null, [], EMPTY_BRIEF, realmBriefing, signal)
         : Promise.resolve();
@@ -1955,6 +1996,16 @@ async function main() {
         // the gate are their own joke rather than a tyre barn in a hall.
         config.ads.enabled && config.show.useRunSheet ? config.ads.breaks : 0,
       );
+      send({
+        type: "run_order",
+        beats: buildRunSheet(config.show.turns, config.show.style, positions).map((beat, index) => ({
+          index,
+          kind: beat.kind,
+          brief: beat.brief,
+          breakIndex: beat.breakIndex,
+          speaker: config.hosts[index % 2].name,
+        })),
+      });
 
       let plannedBreaks: AdBreak[] = [];
       const breakPaths = new Map<number, string>();
@@ -1994,7 +2045,11 @@ async function main() {
       // been all the way round.
       const bucketSpotCount = positions.length * config.ads.spotsPerBreak;
       const fromBucket = positions.length > 0
-        ? pickForShow(bucketSpotCount, realmBriefing ? "court" : "station", activeBrainVersion().id)
+        ? pickForShow(bucketSpotCount, realmBriefing ? "court" : "station", activeBrainVersion().id, {
+            minReplayHours: config.ads.minReplayHours,
+            separateSponsors: config.ads.separateSponsors,
+            sourceWeights: config.ads.sourceWeights,
+          })
         : [];
       const shelved = shelvedBreaks(pack);
       const usingBucket = positions.length > 0 && fromBucket.length >= bucketSpotCount;
@@ -2150,6 +2205,16 @@ async function main() {
       send({ type: "stage", stage: "conversation" });
       let outline: string[] = [];
       const conversationStarted = Date.now();
+      const draft: ShowDraft = {
+        id: jobId,
+        topic,
+        station: config.show.station,
+        style: config.show.style,
+        mood: config.show.mood,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        turns: [],
+      };
 
       // Speak each line as soon as it exists, so the listener hears the show
       // being made instead of watching text for minutes and then getting a file.
@@ -2203,7 +2268,10 @@ async function main() {
           onMemoryTiming: ({ milliseconds, turns }) => timing("Memory", milliseconds, { turns }),
           onModelTiming: ({ index, queueMs, requestMs }) => timing("Model", requestMs, { index, queueMs }),
           onTurnTiming: ({ index, milliseconds, skipped }) => timing("Turn", milliseconds, { index, skipped }),
-          onTurnStart: (turn) => send({ type: "turn_start", ...turn }),
+          onTurnStart: (turn) => {
+            send({ type: "turn_start", ...turn });
+            send({ type: "control", current: turn.index, speaker: turn.speaker, queue: queueStats() });
+          },
           onToken: (text) => send({ type: "token", text }),
           takeCall: () => {
             const queue = callQueues.get(jobId);
@@ -2213,6 +2281,10 @@ async function main() {
           },
           onTurnEnd: (turn) => {
             send({ type: "turn_end", turn });
+            draft.turns = [...draft.turns.filter((saved) => saved.index !== turn.index), turn]
+              .sort((a, b) => a.index - b.index);
+            draft.updatedAt = new Date().toISOString();
+            saveDraft(draft);
             if (!speakLive) return;
 
             // Deliberately not awaited. Speech runs alongside the model writing
@@ -2312,7 +2384,12 @@ async function main() {
       // ── Titles
       send({ type: "stage", stage: "notes" });
       const notesStarted = Date.now();
-      const notes = await generateShowNotes(config, topic, turns, signal, conversation.memory);
+      const notes = config.show.generateNotes
+        ? await generateShowNotes(config, topic, turns, signal, conversation.memory)
+        : {
+            title: topic.length > 60 ? `${topic.slice(0, 57)}...` : topic,
+            summary: `${config.hosts[0].name} and ${config.hosts[1].name} discuss ${topic}.`,
+          };
       timing("Title and summary", Date.now() - notesStarted);
       send({ type: "notes", ...notes });
 
@@ -2379,6 +2456,7 @@ async function main() {
       };
 
       saveShow(show);
+      removeDraft(jobId);
 
       // Rotation history describes broadcasts that actually completed. A
       // cancelled or failed show must leave tonight's unused spots available.

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Radio, Library as LibraryIcon, SlidersHorizontal, Cpu, HardDrive, Crown, Megaphone } from "lucide-react";
-import type { Config, LiveTurn, Options, PlannedBreak, ProducerBrief, Show, Stage, TimingEntry } from "./types";
+import type { Config, ControlState, LiveTurn, Options, PlannedBreak, ProducerBrief, RunOrderEntry, Show, ShowDraft, Stage, TimingEntry } from "./types";
 import { api, generateStream } from "./lib/api";
 import { Studio } from "./components/Studio";
 import { Library } from "./components/Library";
@@ -19,6 +19,7 @@ export default function App() {
   const [configPath, setConfigPath] = useState("");
   const [options, setOptions] = useState<Options | null>(null);
   const [shows, setShows] = useState<Show[]>([]);
+  const [drafts, setDrafts] = useState<ShowDraft[]>([]);
   const [openShow, setOpenShow] = useState<Show | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
 
@@ -29,6 +30,8 @@ export default function App() {
   const [outline, setOutline] = useState<string[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
   const [timings, setTimings] = useState<TimingEntry[]>([]);
+  const [runOrder, setRunOrder] = useState<RunOrderEntry[]>([]);
+  const [control, setControl] = useState<ControlState | null>(null);
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null);
   const [audioProgress, setAudioProgress] = useState<{ done: number; total: number; speaker: string } | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -250,11 +253,14 @@ export default function App() {
   useEffect(() => {
     (async () => {
       try {
-        const [cfg, opts, list] = await Promise.all([api.getConfig(), api.getOptions(), api.listShows()]);
+        const [cfg, opts, list, savedDrafts] = await Promise.all([
+          api.getConfig(), api.getOptions(), api.listShows(), api.listDrafts(),
+        ]);
         setConfig(cfg.config);
         setConfigPath(cfg.configPath);
         setOptions(opts);
         setShows(list);
+        setDrafts(savedDrafts);
       } catch (err) {
         setBootError((err as Error).message);
       }
@@ -295,6 +301,8 @@ export default function App() {
       setOutline([]);
       setLogs([]);
       setTimings([]);
+      setRunOrder([]);
+      setControl(null);
       setError(null);
       setAudioProgress(null);
       setResult(null);
@@ -347,6 +355,14 @@ export default function App() {
               }]);
               break;
             }
+
+            case "run_order":
+              setRunOrder(event.beats as RunOrderEntry[]);
+              break;
+
+            case "control":
+              setControl(event as unknown as ControlState);
+              break;
 
             case "brief":
               setBrief(event.brief as ProducerBrief);
@@ -510,6 +526,7 @@ export default function App() {
               setStage("done");
               setLogs((prev) => [...prev.slice(-99), `Finished in ${event.elapsedSeconds}s.`]);
               void refreshShows();
+              setDrafts((items) => items.filter((draft) => draft.id !== jobIdRef.current));
               break;
             }
 
@@ -672,6 +689,8 @@ export default function App() {
             outline={outline}
             logs={logs}
             timings={timings}
+            runOrder={runOrder}
+            control={control}
             error={error}
             audioProgress={audioProgress}
             elapsed={elapsed}
@@ -688,6 +707,17 @@ export default function App() {
             openItem={openItem}
             nowPlaying={nowPlaying}
             songItem={songItem}
+            drafts={drafts}
+            onRecoverDraft={async (id) => {
+              const recovered = await api.recoverDraft(id);
+              setDrafts((items) => items.filter((draft) => draft.id !== id));
+              await refreshShows();
+              setOpenShow(recovered);
+            }}
+            onDeleteDraft={async (id) => {
+              await api.deleteDraft(id);
+              setDrafts((items) => items.filter((draft) => draft.id !== id));
+            }}
           />
         ) : tab === "realm" ? (
           <Realm

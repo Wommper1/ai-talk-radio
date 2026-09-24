@@ -175,15 +175,25 @@ export function markPlayedMany(ids: string[]): void {
 
   const file = read();
   const playedAt = new Date().toISOString();
+  const changed = advancePlayedRecords(file.spots, wanted, playedAt);
+  if (!changed) return;
+  write(file);
+}
+
+/** Pure accounting core, exported so cancellation semantics stay regression-tested. */
+export function advancePlayedRecords(
+  spots: Array<{ id: string; plays: number; lastPlayed: string }>,
+  ids: ReadonlySet<string>,
+  playedAt: string,
+): boolean {
   let changed = false;
-  for (const spot of file.spots) {
-    if (!wanted.has(spot.id)) continue;
+  for (const spot of spots) {
+    if (!ids.has(spot.id)) continue;
     spot.plays += 1;
     spot.lastPlayed = playedAt;
     changed = true;
   }
-  if (!changed) return;
-  write(file);
+  return changed;
 }
 
 /** Star or unstar. A starred spot cannot be deleted. */
@@ -312,11 +322,16 @@ export function pickForShow(
   wanted: number,
   kind: "station" | "court",
   activeBrainVersion?: string,
+  rules?: {
+    minReplayHours?: number;
+    separateSponsors?: boolean;
+    sourceWeights?: Partial<Record<SpotSource, number>>;
+  },
 ): BucketSpot[] {
   if (wanted <= 0) return [];
 
   const allowed: SpotSource[] = kind === "court" ? ["realm", "multiverse"] : ["station", "multiverse"];
-  const eligible = read().spots.filter(
+  let eligible = read().spots.filter(
     (s) =>
       allowed.includes(s.source) &&
       s.rotation !== false &&
@@ -325,13 +340,35 @@ export function pickForShow(
       hasUsableAudio(s),
   );
 
+  const cutoff = Date.now() - Math.max(0, rules?.minReplayHours ?? 0) * 60 * 60 * 1000;
+  if (cutoff < Date.now()) {
+    const rested = eligible.filter((spot) => !spot.lastPlayed || Date.parse(spot.lastPlayed) <= cutoff);
+    if (rested.length >= wanted) eligible = rested;
+    else eligible = [...rested, ...eligible.filter((spot) => !rested.includes(spot))];
+  }
+
   // Never played sorts before played; after that, longest since last play.
   eligible.sort((a, b) => {
+    if (a.keep !== b.keep) return a.keep ? -1 : 1;
     if (a.plays !== b.plays) return a.plays - b.plays;
+    const aw = rules?.sourceWeights?.[a.source] ?? 1;
+    const bw = rules?.sourceWeights?.[b.source] ?? 1;
+    if (aw !== bw) return bw - aw;
     return (a.lastPlayed || "").localeCompare(b.lastPlayed || "");
   });
 
-  return preferDistinctCopy(eligible, wanted);
+  const candidates = preferDistinctCopy(eligible, eligible.length);
+  if (!rules?.separateSponsors) return candidates.slice(0, wanted);
+
+  const picked: BucketSpot[] = [];
+  const remaining = [...candidates];
+  while (picked.length < wanted && remaining.length > 0) {
+    const previous = picked[picked.length - 1]?.sponsor.trim().toLowerCase();
+    let index = remaining.findIndex((spot) => !previous || spot.sponsor.trim().toLowerCase() !== previous);
+    if (index < 0) index = 0;
+    picked.push(remaining.splice(index, 1)[0]);
+  }
+  return picked;
 }
 
 /** What is in there, for the tab header. */

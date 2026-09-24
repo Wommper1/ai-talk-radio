@@ -809,7 +809,7 @@ export async function titleFromMemory(
   if (!memory.digest) return null;
 
   try {
-    const text = await generate(config.llm, {
+    const text = await generate({ ...config.llm, model: config.llm.notesModel || config.llm.model }, {
       messages: [
         {
           role: "system",

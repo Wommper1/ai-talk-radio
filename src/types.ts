@@ -59,6 +59,9 @@ export interface AdsConfig {
   usePromos: boolean;
   /** Keep the commercial bucket stocked on its own, after a show. */
   topUpBucket: boolean;
+  minReplayHours: number;
+  separateSponsors: boolean;
+  sourceWeights: { station: number; realm: number; multiverse: number };
   announcer: {
     name: string;
     voices: Record<TtsEngine, string>;
@@ -101,6 +104,8 @@ export interface LlmConfig {
   baseUrl: string;
   apiKey: string;
   producerModel: string;
+  notesModel: string;
+  commercialModel: string;
   model: string;
   temperature: number;
   maxTokens: number;
@@ -115,6 +120,7 @@ export interface TtsConfig {
 }
 
 export interface ShowConfig {
+  performanceProfile: "fast" | "balanced" | "produced" | "custom";
   station: string;
   style: ShowStyle;
   turns: number;
@@ -126,6 +132,8 @@ export interface ShowConfig {
   useProducer: boolean;
   useRunSheet: boolean;
   useOutline: boolean;
+  generateNotes: boolean;
+  warmUpModel: boolean;
   speakWhileWriting: boolean;
   useColdOpen: boolean;
   liveBed: boolean;
@@ -176,6 +184,17 @@ export interface Show {
   generationVersion?: number;
   audioUrl?: string;
   coverUrl?: string;
+}
+
+export interface ShowDraft {
+  id: string;
+  topic: string;
+  station: string;
+  style: string;
+  mood: string;
+  createdAt: string;
+  updatedAt: string;
+  turns: LiveTurn[];
 }
 
 export type DjRating = "keeper" | "reject";
@@ -326,6 +345,20 @@ export interface TimingEntry {
   queueMs?: number;
   turns?: number;
   skipped?: boolean;
+}
+
+export interface RunOrderEntry {
+  index: number;
+  kind: string;
+  brief: string;
+  breakIndex?: number;
+  speaker: string;
+}
+
+export interface ControlState {
+  current: number;
+  speaker: string;
+  queue: { inFlight: number; pending: number; foreground: number; background: number };
 }
 
 export type Stage =

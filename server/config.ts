@@ -47,6 +47,10 @@ export interface LlmConfig {
   apiKey: string;
   /** Optional reasoning model for producer briefs and outlines. */
   producerModel: string;
+  /** Optional cheap model for episode titles and summaries. */
+  notesModel: string;
+  /** Optional model dedicated to writing commercial copy. */
+  commercialModel: string;
   /** Default performer model. Individual hosts may still override it. */
   model: string;
   temperature: number;
@@ -210,6 +214,11 @@ export interface AdsConfig {
    * live — which is the single largest thing that ever made a show slow.
    */
   topUpBucket: boolean;
+  /** Minimum age before an aired bucket spot is preferred again. */
+  minReplayHours: number;
+  /** Avoid placing the same sponsor back-to-back in a show. */
+  separateSponsors: boolean;
+  sourceWeights: { station: number; realm: number; multiverse: number };
   /** The separate voice used for produced spots. */
   announcer: {
     name: string;
@@ -324,6 +333,7 @@ export interface OpeningSongConfig {
 }
 
 export interface ShowConfig {
+  performanceProfile: "fast" | "balanced" | "produced" | "custom";
   station: string;
   style: ShowStyle;
   /** Total dialogue turns across both hosts. */
@@ -343,6 +353,10 @@ export interface ShowConfig {
   useRunSheet: boolean;
   /** Ask the model for a beat outline before writing dialogue. */
   useOutline: boolean;
+  /** Generate a model-written title and summary after the show. */
+  generateNotes: boolean;
+  /** Prefill the next host prompt while opening audio plays. */
+  warmUpModel: boolean;
   /** Speak each line as it is written, instead of only at the end. */
   speakWhileWriting: boolean;
   /**
@@ -388,6 +402,8 @@ export const DEFAULT_CONFIG: Config = {
     baseUrl: "http://127.0.0.1:1234/v1",
     apiKey: "",
     producerModel: "",
+    notesModel: "",
+    commercialModel: "",
     model: "",
     temperature: 0.85,
     maxTokens: 400,
@@ -488,6 +504,9 @@ export const DEFAULT_CONFIG: Config = {
     loudnessDb: 3,
     usePromos: true,
     topUpBucket: true,
+    minReplayHours: 24,
+    separateSponsors: true,
+    sourceWeights: { station: 1, realm: 1, multiverse: 1.4 },
     announcer: {
       name: "Announcer",
       voices: {
@@ -554,6 +573,7 @@ export const DEFAULT_CONFIG: Config = {
     compress: true,
   },
   show: {
+    performanceProfile: "balanced",
     station: "Local Talk Radio",
     style: "debate",
     turns: 24,
@@ -565,6 +585,8 @@ export const DEFAULT_CONFIG: Config = {
     useProducer: true,
     useRunSheet: true,
     useOutline: true,
+    generateNotes: true,
+    warmUpModel: true,
     speakWhileWriting: true,
     useColdOpen: true,
     liveBed: true,
@@ -602,6 +624,8 @@ export function normalizeConfig(raw: unknown): Config {
     baseUrl: str(llmIn.baseUrl, d.llm.baseUrl).trim(),
     apiKey: str(llmIn.apiKey, d.llm.apiKey),
     producerModel: str(llmIn.producerModel, d.llm.producerModel).trim(),
+    notesModel: str(llmIn.notesModel, d.llm.notesModel).trim(),
+    commercialModel: str(llmIn.commercialModel, d.llm.commercialModel).trim(),
     model: str(llmIn.model, d.llm.model).trim(),
     temperature: clamp(llmIn.temperature, 0, 2, d.llm.temperature),
     maxTokens: Math.round(clamp(llmIn.maxTokens, 32, 8192, d.llm.maxTokens)),
@@ -674,6 +698,7 @@ export function normalizeConfig(raw: unknown): Config {
   };
 
   const adsIn = (input.ads ?? {}) as Partial<AdsConfig>;
+  const weightsIn = (adsIn.sourceWeights ?? {}) as Partial<AdsConfig["sourceWeights"]>;
   const annIn = (adsIn.announcer ?? {}) as Partial<AdsConfig["announcer"]>;
   const annVoices = (annIn.voices ?? {}) as Partial<Record<TtsEngine, string>>;
 
@@ -704,6 +729,13 @@ export function normalizeConfig(raw: unknown): Config {
     // A long show needs more of them; breakPositions spaces out whatever it gets.
     breaks: Math.round(clamp(adsIn.breaks, 0, 24, d.ads.breaks)),
     spotsPerBreak: Math.round(clamp(adsIn.spotsPerBreak, 1, 4, d.ads.spotsPerBreak)),
+    minReplayHours: clamp(adsIn.minReplayHours, 0, 24 * 30, d.ads.minReplayHours),
+    separateSponsors: typeof adsIn.separateSponsors === "boolean" ? adsIn.separateSponsors : d.ads.separateSponsors,
+    sourceWeights: {
+      station: clamp(weightsIn.station, 0.1, 5, d.ads.sourceWeights.station),
+      realm: clamp(weightsIn.realm, 0.1, 5, d.ads.sourceWeights.realm),
+      multiverse: clamp(weightsIn.multiverse, 0.1, 5, d.ads.sourceWeights.multiverse),
+    },
     source: oneOf(adsIn.source, ["sponsors", "invented", "mixed"] as const, d.ads.source),
     style: oneOf(adsIn.style, ["live_read", "produced", "mixed"] as const, d.ads.style),
     spotWords: Math.round(clamp(adsIn.spotWords, 20, 160, d.ads.spotWords)),
@@ -761,6 +793,7 @@ export function normalizeConfig(raw: unknown): Config {
 
   const showIn = (input.show ?? {}) as Partial<ShowConfig>;
   const show: ShowConfig = {
+    performanceProfile: oneOf(showIn.performanceProfile, ["fast", "balanced", "produced", "custom"] as const, d.show.performanceProfile),
     station: str(showIn.station, d.show.station).slice(0, 60) || d.show.station,
     style: oneOf(
       showIn.style,
@@ -781,6 +814,8 @@ export function normalizeConfig(raw: unknown): Config {
     useProducer: typeof showIn.useProducer === "boolean" ? showIn.useProducer : d.show.useProducer,
     useRunSheet: typeof showIn.useRunSheet === "boolean" ? showIn.useRunSheet : d.show.useRunSheet,
     useOutline: typeof showIn.useOutline === "boolean" ? showIn.useOutline : d.show.useOutline,
+    generateNotes: typeof showIn.generateNotes === "boolean" ? showIn.generateNotes : d.show.generateNotes,
+    warmUpModel: typeof showIn.warmUpModel === "boolean" ? showIn.warmUpModel : d.show.warmUpModel,
     speakWhileWriting:
       typeof showIn.speakWhileWriting === "boolean" ? showIn.speakWhileWriting : d.show.speakWhileWriting,
     useColdOpen: typeof showIn.useColdOpen === "boolean" ? showIn.useColdOpen : d.show.useColdOpen,

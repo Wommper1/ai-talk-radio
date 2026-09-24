@@ -281,6 +281,24 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
             )}
           </Field>
 
+          {(["notesModel", "commercialModel"] as const).map((key) => (
+            <Field
+              key={key}
+              label={key === "notesModel" ? "Notes model" : "Commercial model"}
+              hint={key === "notesModel" ? "Optional. A small model is enough for titles and summaries." : "Optional. Keeps ad writing off the live DJ model."}
+              className="sm:col-span-2"
+            >
+              {models.length > 0 ? (
+                <Select value={config.llm[key]} onChange={(e) => update("llm", { [key]: e.target.value })}>
+                  <option value="">Same as DJ model</option>
+                  {models.map((model) => <option key={model.id} value={model.id}>{model.label}</option>)}
+                </Select>
+              ) : (
+                <Input value={config.llm[key]} onChange={(e) => update("llm", { [key]: e.target.value })} placeholder="Same as DJ model" spellCheck={false} />
+              )}
+            </Field>
+          ))}
+
           {config.llm.provider === "gemini" && (
             <Field label="API key" hint="Stored in config.json on this machine." className="sm:col-span-2">
               <Input

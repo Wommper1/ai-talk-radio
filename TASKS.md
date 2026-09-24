@@ -12,9 +12,9 @@ This list tracks the showrunner, scheduler, stability, performance, and control-
   - Acceptance: transcript-only and no-opener starts issue the first dialogue request without a warm-up ahead of it.
 - [x] 4. Add a model preflight that detects stale configured model IDs before generation.
   - Acceptance: the UI names the mismatch and lets the listener select an available model without silently rewriting settings.
-- [ ] 5. Checkpoint show drafts and support recovery after interruption.
+- [x] 5. Checkpoint show drafts and support recovery after interruption.
   - Acceptance: completed turns survive a restart and can be recovered or resumed.
-- [ ] 6. Replace full-show in-memory mixing with bounded or chunked processing.
+- [x] 6. Replace full-show in-memory mixing with bounded or chunked processing.
   - Acceptance: long shows do not allocate several complete mono and stereo copies in memory.
 - [x] 7. Use atomic writes for configuration, show metadata, and all memory indexes.
   - Acceptance: interrupted writes leave either the previous valid file or the complete new file.
@@ -25,20 +25,20 @@ This list tracks the showrunner, scheduler, stability, performance, and control-
 
 ## Performance
 
-- [ ] 10. Support a smaller performer model while reserving a larger model for planning.
+- [x] 10. Support a smaller performer model while reserving a larger model for planning.
   - Acceptance: host, producer, notes, and commercial model roles are explicit and measurable.
-- [~] 11. Make warm-up cover-aware and prepare only the speaker needed next.
+- [x] 11. Make warm-up cover-aware and prepare only the speaker needed next.
   - Acceptance: warm-up runs only beneath enough playable material and never blocks a waiting foreground turn.
-- [ ] 12. Make title and summary generation optional or deferred.
+- [x] 12. Make title and summary generation optional or deferred.
   - Acceptance: Fast Live can finish without another blocking model call after the conversation.
-- [ ] 13. Add Fast Live, Balanced, and Produced performance profiles.
+- [x] 13. Add Fast Live, Balanced, and Produced performance profiles.
   - Acceptance: each profile clearly controls planning, memory, notes, imaging, and warm-up costs.
 
 ## Showrunner additions
 
-- [ ] 14. Build a control-room view of the upcoming log, current queue, next speaker, breaks, and estimated wait.
-- [ ] 15. Add an interrupted-show recovery screen and resume workflow.
-- [ ] 16. Add commercial rotation rules for replay spacing, sponsor separation, source weighting, favorites, and quarantine.
-- [~] 17. Add regression coverage for bucket cardinality, play accounting, stale models, uncovered warm-up, duplicate jobs, and interrupted mixing.
+- [x] 14. Build a control-room view of the upcoming log, current queue, next speaker, breaks, and estimated wait.
+- [x] 15. Add an interrupted-show recovery screen and resume workflow.
+- [x] 16. Add commercial rotation rules for replay spacing, sponsor separation, source weighting, favorites, and quarantine.
+- [x] 17. Add regression coverage for bucket cardinality, play accounting, stale models, uncovered warm-up, duplicate jobs, and interrupted mixing.
 
 Legend: `[ ]` queued, `[~]` in progress, `[x]` complete.

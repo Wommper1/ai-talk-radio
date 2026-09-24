@@ -179,6 +179,40 @@ export function Ads({ config, options, onChange, voices }: Props) {
               />
 
               <div className="grid gap-4 sm:grid-cols-2">
+                <Slider
+                  label="Replay spacing"
+                  value={ads.minReplayHours}
+                  min={0}
+                  max={168}
+                  step={6}
+                  onChange={(minReplayHours) => update({ minReplayHours })}
+                  format={(value) => value === 0 ? "off" : `${value} hr`}
+                  hint="Recently aired spots wait when enough rested spots are available."
+                />
+                <Toggle
+                  label="Separate sponsors"
+                  hint="Avoids placing the same sponsor back-to-back in tonight's log."
+                  checked={ads.separateSponsors}
+                  onChange={(separateSponsors) => update({ separateSponsors })}
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                {(["station", "realm", "multiverse"] as const).map((source) => (
+                  <Slider
+                    key={source}
+                    label={`${source[0].toUpperCase()}${source.slice(1)} weight`}
+                    value={ads.sourceWeights[source]}
+                    min={0.1}
+                    max={3}
+                    step={0.1}
+                    onChange={(value) => update({ sourceWeights: { ...ads.sourceWeights, [source]: value } })}
+                    format={(value) => `${value.toFixed(1)}x`}
+                  />
+                ))}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Who advertises" hint="Made-up sponsors need no setup and are usually funnier.">
                   <Select value={ads.source} onChange={(e) => update({ source: e.target.value as Config["ads"]["source"] })}>
                     {(options?.adSources ?? []).map((o) => (
@@ -588,4 +622,3 @@ function AdShelf({ reusePercent }: { reusePercent: number }) {
     </Panel>
   );
 }
-

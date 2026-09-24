@@ -41,7 +41,7 @@ import {
 } from "../server/memory/running.ts";
 import { coldOpenScript } from "../server/pipeline/coldopen.ts";
 import { SHOWS_PER_PACK, currentPreroll, listPrerolls } from "../server/pipeline/preroll.ts";
-import { bucketStats, listBucket, pickForShow } from "../server/pipeline/bucket.ts";
+import { advancePlayedRecords, bucketStats, listBucket, pickForShow } from "../server/pipeline/bucket.ts";
 import {
   activeBrainVersion,
   briefFor,
@@ -65,8 +65,10 @@ import { auditDjConfig, DJ_EVAL_TOPICS, evaluateDjTranscript } from "../server/p
 import { isRecallEligible, recallBlock } from "../server/memory/retrieval.ts";
 import { CURRENT_SHOW_FORMAT } from "../server/pipeline/store.ts";
 import { groupCommercialBreaks } from "../shared/commercial-rotation.ts";
-import { isSafeJobId, shouldWarmUpShow } from "../shared/show-job.ts";
+import { isSafeJobId, jobIdProblem, shouldWarmUpShow } from "../shared/show-job.ts";
+import { applyPerformanceProfile } from "../shared/performance-profiles.ts";
 import { missingModels } from "../shared/model-preflight.ts";
+import { LOW_MEMORY_MIX_SECONDS, MAX_MIX_SECONDS, mixPolicy } from "../shared/mix-policy.ts";
 import {
   GUILD_NAME,
   readRealm,
@@ -922,6 +924,7 @@ check(
 check("browser show ids are accepted", isSafeJobId("job-mu123abc"));
 check("show ids cannot escape the live folder", !isSafeJobId("../outside"));
 check("show ids cannot contain path separators", !isSafeJobId("job/live"));
+check("duplicate running jobs are rejected", jobIdProblem("job-live", new Set(["job-live"]))?.includes("already running") === true);
 check(
   "transcript-only shows skip model warm-up",
   !shouldWarmUpShow({ speakLive: false, hasOpeningAudio: true, hasOpeningSong: true }),
@@ -943,6 +946,27 @@ check(
   "model preflight covers host overrides without duplicate warnings",
   missingModels(["main", "guest", "guest"], ["main"]).join(",") === "guest",
 );
+check("ordinary shows retain stereo", mixPolicy(LOW_MEMORY_MIX_SECONDS, true).stereo);
+check("long shows enter bounded mono mode", !mixPolicy(LOW_MEMORY_MIX_SECONDS + 1, true).stereo);
+check("long-show mode skips the full procedural bed", !mixPolicy(LOW_MEMORY_MIX_SECONDS + 1, true).proceduralBed);
+check("unsafe mix durations are rejected before allocation", !mixPolicy(MAX_MIX_SECONDS + 1, false).allowed);
+const accountingRows = [{ id: "aired", plays: 2, lastPlayed: "" }, { id: "unused", plays: 4, lastPlayed: "old" }];
+check("completed spots advance play accounting", advancePlayedRecords(accountingRows, new Set(["aired"]), "now"));
+check("only completed spots advance", accountingRows[0].plays === 3 && accountingRows[1].plays === 4);
+const fastProfile = applyPerformanceProfile(DEFAULT_CONFIG, "fast");
+check("Fast Live removes blocking planning calls", !fastProfile.show.useProducer && !fastProfile.show.useOutline && !fastProfile.show.generateNotes);
+check("Fast Live disables model warm-up", !fastProfile.show.warmUpModel);
+const producedProfile = applyPerformanceProfile(DEFAULT_CONFIG, "produced");
+check("Produced enables the full planning chain", producedProfile.show.useProducer && producedProfile.show.useOutline && producedProfile.show.generateNotes);
+const roleModels = normalizeConfig({ llm: { model: "performer", producerModel: "planner", notesModel: "tiny", commercialModel: "copywriter" } });
+check("performer model remains explicit", roleModels.llm.model === "performer");
+check("producer model remains explicit", roleModels.llm.producerModel === "planner");
+check("notes model remains explicit", roleModels.llm.notesModel === "tiny");
+check("commercial model remains explicit", roleModels.llm.commercialModel === "copywriter");
+const rotationRules = normalizeConfig({ ads: { minReplayHours: 48, separateSponsors: false, sourceWeights: { station: 2, realm: 0.5, multiverse: 3 } } });
+check("commercial replay spacing is normalized", rotationRules.ads.minReplayHours === 48);
+check("commercial sponsor separation can be disabled", rotationRules.ads.separateSponsors === false);
+check("commercial source weights are preserved", rotationRules.ads.sourceWeights.multiverse === 3);
 
 const activeCommercialBrain = activeBrainVersion().id;
 const currentBrainPicks = [

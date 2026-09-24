@@ -15,11 +15,14 @@ import {
   Shuffle,
   Clock3,
   Copy,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
-import type { CallerRecord, Config, LiveTurn, Options, PlannedBreak, ProducerBrief, Show, Stage, TimingEntry } from "../types";
+import type { CallerRecord, Config, ControlState, LiveTurn, Options, PlannedBreak, ProducerBrief, RunOrderEntry, Show, ShowDraft, Stage, TimingEntry } from "../types";
 import { Button, Callout, Equalizer, Field, Input, Panel, Select, Slider, Textarea, Toggle } from "./ui";
 import { api } from "../lib/api";
 import type { AdFile } from "../types";
+import { applyPerformanceProfile, type PerformanceProfile } from "../../shared/performance-profiles";
 
 interface Props {
   config: Config;
@@ -34,6 +37,8 @@ interface Props {
   outline: string[];
   logs: string[];
   timings: TimingEntry[];
+  runOrder: RunOrderEntry[];
+  control: ControlState | null;
   error: { message: string; hint?: string } | null;
   audioProgress: { done: number; total: number; speaker: string } | null;
   elapsed: number;
@@ -53,6 +58,9 @@ interface Props {
   nowPlaying: "open" | "songintro" | "break" | "song" | "filler" | null;
   /** The record playing at the top of the show, once one has been announced. */
   songItem: { label: string; text: string } | null;
+  drafts: ShowDraft[];
+  onRecoverDraft: (id: string) => Promise<void>;
+  onDeleteDraft: (id: string) => Promise<void>;
 }
 
 const STAGE_LABEL: Record<Stage, string> = {
@@ -176,6 +184,8 @@ export function Studio(props: Props) {
     outline,
     logs,
     timings,
+    runOrder,
+    control,
     error,
     audioProgress,
     elapsed,
@@ -192,6 +202,9 @@ export function Studio(props: Props) {
     openItem,
     nowPlaying,
     songItem,
+    drafts,
+    onRecoverDraft,
+    onDeleteDraft,
   } = props;
 
   const [topic, setTopic] = useState("");
@@ -232,11 +245,36 @@ export function Studio(props: Props) {
 
   // Dialogue, gaps, the breaks, the opener and the record — what actually goes out.
   const runtime = runtimeLabel(estimateSeconds(config));
+  const modelSamples = timings.filter((entry) => entry.phase === "Model" && !entry.skipped);
+  const averageModelMs = modelSamples.length
+    ? modelSamples.reduce((sum, entry) => sum + entry.milliseconds + (entry.queueMs ?? 0), 0) / modelSamples.length
+    : 0;
+  const nextSpeaker = control && runOrder[control.current + 1]?.speaker;
 
   return (
     <div className="mx-auto grid max-w-7xl gap-5 px-5 py-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       {/* ── Controls ──────────────────────────────────────────── */}
       <div className="space-y-5">
+        {!running && drafts.length > 0 && (
+          <Panel title="Interrupted broadcasts" subtitle="Completed turns are safe and can be recovered.">
+            <div className="divide-y divide-[var(--color-line)]">
+              {drafts.map((draft) => (
+                <div key={draft.id} className="flex items-center gap-2 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium text-white">{draft.topic}</div>
+                    <div className="text-xs text-[var(--color-mute)]">{draft.turns.length} completed turns</div>
+                  </div>
+                  <Button size="sm" onClick={() => void onRecoverDraft(draft.id)} title="Recover to library">
+                    <RotateCcw size={13} /> Recover
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => void onDeleteDraft(draft.id)} title="Discard draft">
+                    <Trash2 size={13} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        )}
         <Panel title="On air">
           <form onSubmit={submit} className="space-y-4">
             <Field
@@ -421,6 +459,21 @@ export function Studio(props: Props) {
 
         <Panel title="Direction" subtitle="Steer the conversation without editing the hosts.">
           <div className="space-y-4">
+            <Field label="Performance profile" hint="Fast Live minimizes model calls; Produced uses the full planning chain.">
+              <Select
+                value={config.show.performanceProfile}
+                disabled={running}
+                onChange={(event) => {
+                  const profile = event.target.value as PerformanceProfile;
+                  onChange(profile === "custom" ? { ...config, show: { ...config.show, performanceProfile: "custom" } } : applyPerformanceProfile(config, profile));
+                }}
+              >
+                <option value="fast">Fast Live</option>
+                <option value="balanced">Balanced</option>
+                <option value="produced">Produced</option>
+                <option value="custom">Custom</option>
+              </Select>
+            </Field>
             <Field label="Station name">
               <Input
                 value={config.show.station}
@@ -502,6 +555,20 @@ export function Studio(props: Props) {
               hint="Asks the model for a beat sheet before writing dialogue. Keeps long shows on track."
               checked={config.show.useOutline}
               onChange={(useOutline) => update("show", { useOutline })}
+            />
+
+            <Toggle
+              label="Generate episode notes"
+              hint="Turn this off to skip the final title-and-summary model call. The topic becomes the title."
+              checked={config.show.generateNotes}
+              onChange={(generateNotes) => update("show", { generateNotes, performanceProfile: "custom" })}
+            />
+
+            <Toggle
+              label="Warm the first DJ"
+              hint="Prefills only the opening speaker while playable opening audio is on air."
+              checked={config.show.warmUpModel}
+              onChange={(warmUpModel) => update("show", { warmUpModel, performanceProfile: "custom" })}
             />
 
             <Toggle
@@ -689,6 +756,32 @@ export function Studio(props: Props) {
                     </ul>
                   </div>
                 ))}
+              </div>
+            </details>
+          )}
+
+          {runOrder.length > 0 && (
+            <details className="mb-4 border-y border-[var(--color-line)]" open>
+              <summary className="flex cursor-pointer items-center justify-between py-2.5 text-xs font-semibold uppercase text-[var(--color-dim)]">
+                <span className="flex items-center gap-2"><ListTree size={13} /> Control room</span>
+                <span className="font-mono font-normal text-[var(--color-mute)]">
+                  {control
+                    ? `Turn ${control.current + 1} · next ${nextSpeaker ?? "close"} · queue ${control.queue.pending}${averageModelMs ? ` · ~${durationLabel(averageModelMs)} wait` : ""}`
+                    : `${runOrder.length} turns`}
+                </span>
+              </summary>
+              <div className="max-h-56 overflow-y-auto border-t border-[var(--color-line)] py-2">
+                {runOrder.map((beat) => {
+                  const active = beat.index === control?.current;
+                  const done = control ? beat.index < control.current : false;
+                  return (
+                    <div key={beat.index} className={`grid grid-cols-[28px_90px_1fr] gap-2 px-2 py-1.5 text-xs ${active ? "bg-[var(--color-amber)]/10 text-white" : done ? "text-[var(--color-mute)]" : "text-[var(--color-dim)]"}`}>
+                      <span className="font-mono">{beat.index + 1}</span>
+                      <span className="truncate">{beat.speaker}</span>
+                      <span className="truncate">{beat.kind.replaceAll("_", " ")}{beat.breakIndex === undefined ? "" : ` · break ${beat.breakIndex + 1}`}</span>
+                    </div>
+                  );
+                })}
               </div>
             </details>
           )}

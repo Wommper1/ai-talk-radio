@@ -634,7 +634,7 @@ export async function writeSpot(
     status: "started",
     source: brief.source,
     sponsor: brief.sponsor,
-    model: config.llm.model,
+    model: config.llm.commercialModel || config.llm.model,
     brainVersion: brainVersion.id,
     prompt,
   });
@@ -645,7 +645,7 @@ export async function writeSpot(
   let error = "";
 
   try {
-    const raw = await generate(config.llm, {
+    const raw = await generate({ ...config.llm, model: config.llm.commercialModel || config.llm.model }, {
       messages: [
         {
           role: "system",

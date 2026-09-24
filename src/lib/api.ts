@@ -12,6 +12,7 @@ import type {
   Options,
   ProbeResult,
   Show,
+  ShowDraft,
   ShowFiles,
   StorageSummary,
   Voice,
@@ -54,6 +55,12 @@ export const api = {
     json<ProbeResult<Voice>>("/api/check/tts", { method: "POST", body: JSON.stringify(config) }),
 
   listShows: () => json<Show[]>("/api/shows"),
+
+  listDrafts: () => json<ShowDraft[]>("/api/drafts"),
+
+  recoverDraft: (id: string) => json<Show>(`/api/drafts/${id}/recover`, { method: "POST" }),
+
+  deleteDraft: (id: string) => json<{ ok: true }>(`/api/drafts/${id}`, { method: "DELETE" }),
 
   getShow: (id: string) => json<Show>(`/api/shows/${id}`),
 

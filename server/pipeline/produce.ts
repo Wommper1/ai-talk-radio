@@ -28,6 +28,7 @@ import { applyTone, duck, compress, limit } from "../audio/effects.ts";
 import { generateBed, type Mood } from "../audio/music.ts";
 import { makeSting, STING_LENGTHS } from "../audio/stings.ts";
 import type { Turn } from "./conversation.ts";
+import { MAX_MIX_SECONDS, mixPolicy } from "../../shared/mix-policy.ts";
 
 export interface TranscriptLine {
   start: number;
@@ -342,6 +343,16 @@ export async function produceShow(
   }
 
   const totalSeconds = cursor;
+  const policy = mixPolicy(totalSeconds + config.show.outroSeconds, quality.stereo);
+  if (!policy.allowed) {
+    throw new Error(
+      `This show is longer than the ${Math.round(MAX_MIX_SECONDS / 60)} minute safe mixing limit. ` +
+      "Recover the saved draft, shorten the running order, or split it into episodes.",
+    );
+  }
+  if (quality.stereo && !policy.stereo) {
+    events.onInfo?.("Long-show safety mode: mixing in mono without a generated bed to keep memory bounded.");
+  }
 
   // ── Station imaging ──────────────────────────────────────────────
   // Stings are laid over the assembled timeline rather than inserted into it,
@@ -446,7 +457,7 @@ export async function produceShow(
     }
   }
 
-  const useMusic = mood !== "none" && config.show.musicVolume > 0.001;
+  const useMusic = policy.proceduralBed && mood !== "none" && config.show.musicVolume > 0.001;
 
   const bed = useMusic
     ? gain(
@@ -487,7 +498,7 @@ export async function produceShow(
   let finalBuffer: Buffer;
   let duration: number;
 
-  if (quality.stereo) {
+  if (policy.stereo) {
     // Place the hosts either side of centre so they are easier to tell apart.
     const left = new Float32Array(mixLength);
     const right = new Float32Array(mixLength);

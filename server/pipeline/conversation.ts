@@ -1224,7 +1224,9 @@ export function warmUp(
   // Both speakers, because they are different prompts and each has to be read
   // once. Sequential rather than at once: two full prefills in parallel on a
   // six-gigabyte card is how you turn a warm-up into a stall.
-  return systems
+  // Only the first speaker is on the critical path. Speaker two can reuse the
+  // live conversation prefix instead of occupying the model before turn one.
+  return systems.slice(0, 1)
     .reduce(
       (chain, system) =>
         chain.then(async () => {
@@ -2008,7 +2010,8 @@ export async function generateShowNotes(
   }
 
   try {
-    const notes = await generateJson<{ title?: string; summary?: string }>(config.llm, {
+    const notes = await generateJson<{ title?: string; summary?: string }>(
+      { ...config.llm, model: config.llm.notesModel || config.llm.model }, {
       messages: [
         {
           role: "system",
@@ -2027,7 +2030,8 @@ export async function generateShowNotes(
       temperature: 0.7,
       maxTokens: 300,
       signal,
-    });
+      },
+    );
 
     const title = typeof notes?.title === "string" ? notes.title.trim().replace(/^["']|["']$/g, "") : "";
     const summary = typeof notes?.summary === "string" ? notes.summary.trim() : "";

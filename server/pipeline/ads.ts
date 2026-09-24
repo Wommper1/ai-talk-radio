@@ -1153,7 +1153,7 @@ async function writeCopy(
 
   for (const attempt of attempts) {
     try {
-      const text = await generate(config.llm, {
+      const text = await generate({ ...config.llm, model: config.llm.commercialModel || config.llm.model }, {
       priority: "background",
         messages: attempt.messages,
         temperature: 0.95,
