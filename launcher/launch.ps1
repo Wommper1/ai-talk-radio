@@ -17,7 +17,9 @@ function Test-Health {
     param([string]$Base)
     try {
         $r = Invoke-WebRequest -Uri "$Base/api/health" -TimeoutSec 2 -UseBasicParsing
-        return ($r.StatusCode -eq 200)
+        if ($r.StatusCode -ne 200) { return $false }
+        $body = $r.Content | ConvertFrom-Json
+        return ($body.ok -eq $true -and $body.app -eq 'local-talk-radio')
     } catch {
         return $false
     }
@@ -76,19 +78,37 @@ if ($needsInstall) {
 $env:NODE_ENV = 'development'
 $env:ENABLE_HMR = 'false'
 
-# ── Already running? Replace it, so this launch runs the newest code. ─
-if (Test-Health $url) {
-    Write-Step "An older instance is running - restarting it on the latest code..."
-    $existing = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
-    foreach ($conn in $existing) {
-        try { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue } catch { }
+# Search the whole range. The station may have moved to 3001 on the previous
+# launch because another program owned 3000; find and restart that exact app.
+# An unrelated listener is never stopped merely because it answers /api/health.
+$selected = $false
+foreach ($candidate in 3000..3010) {
+    $candidateUrl = "http://localhost:$candidate"
+    if (Test-Health $candidateUrl) {
+        Write-Step "An older station instance is running on $candidate - restarting it on the latest code..."
+        $existing = Get-NetTCPConnection -LocalPort $candidate -State Listen -ErrorAction SilentlyContinue
+        foreach ($conn in $existing) {
+            try { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue } catch { }
+        }
+        for ($i = 0; $i -lt 20; $i++) {
+            if (-not (Get-NetTCPConnection -LocalPort $candidate -State Listen -ErrorAction SilentlyContinue)) { break }
+            Start-Sleep -Milliseconds 250
+        }
+        $port = $candidate
+        $url = $candidateUrl
+        $selected = $true
+        break
     }
-    # Give the port a moment to be released before rebinding it.
-    for ($i = 0; $i -lt 20; $i++) {
-        if (-not (Test-Health $url)) { break }
-        Start-Sleep -Milliseconds 250
+
+    if (-not (Get-NetTCPConnection -LocalPort $candidate -State Listen -ErrorAction SilentlyContinue)) {
+        $port = $candidate
+        $url = $candidateUrl
+        $selected = $true
+        break
     }
 }
+if (-not $selected) { throw 'No free local port found between 3000 and 3010.' }
+$env:PORT = [string]$port
 
 # ── Is a model server up? Warn, but do not block. ────────────────────
 $llmUp = $false
