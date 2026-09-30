@@ -319,14 +319,18 @@ export async function recall(
   return picked;
 }
 
-export function memoryStats(): { backend: string; shows: number; passages: number; path: string } {
+export function memoryStats(): { backend: string; shows: number; passages: number; path: string; eligibleShows: number; excludedLegacyShows: number } {
   const index = loadIndex();
   const current = index?.formatVersion === CURRENT_SHOW_FORMAT ? index : null;
+  const library = listShows();
+  const eligibleShows = library.filter(isRecallEligible).length;
   return {
     backend: current?.backend ?? "none",
     shows: current?.indexed.length ?? 0,
     passages: current?.entries.length ?? 0,
     path: INDEX_PATH,
+    eligibleShows,
+    excludedLegacyShows: library.length - eligibleShows,
   };
 }
 

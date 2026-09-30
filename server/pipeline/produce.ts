@@ -24,7 +24,8 @@ import {
   type AudioBuffer,
   type StereoBuffer,
 } from "../audio/wav.ts";
-import { applyTone, duck, compress, limit } from "../audio/effects.ts";
+import { applyTone, broadcastVoice, duck, limit } from "../audio/effects.ts";
+import { masterMono, masterStereo, type AudioAnalysis } from "../audio/loudness.ts";
 import { generateBed, type Mood } from "../audio/music.ts";
 import { makeSting, STING_LENGTHS } from "../audio/stings.ts";
 import type { Turn } from "./conversation.ts";
@@ -50,6 +51,8 @@ export interface ProduceResult {
   audioPath: string;
   /** True when speech was synthesised; false when TTS is off. */
   hasAudio: boolean;
+  /** Saved with the show so the operator can compare finished masters. */
+  audioAnalysis?: AudioAnalysis;
 }
 
 export interface ProduceEvents {
@@ -93,8 +96,9 @@ export async function renderTurnClip(
   clip = resample(clip, SAMPLE_RATE);
   clip = trimSilence(clip);
   clip = applyTone(clip, host.tone);
+  clip = broadcastVoice(clip);
   // Level each turn individually so one host is not quieter than the other.
-  clip = normalize(clip, 0.82);
+  clip = normalize(clip, 0.86);
 
   // Overwrite with the processed audio so re-reads are already correct.
   fs.writeFileSync(outPath, encodeWav(clip));
@@ -434,11 +438,10 @@ export async function produceShow(
   // dialogue treatment, and the music is never squashed along with the voices.
   // Commercials and the opener arrive already produced to their own rules, so
   // they are not compressed again here.
-  const compressed: Placed[] = placed.map((item) =>
-    quality.compress && item.kind === "voice"
-      ? { ...item, clip: compress(item.clip, { thresholdDb: -20, ratio: 3, makeupDb: 3.5 }) }
-      : item,
-  );
+  // Voice clips already carry the same per-mic chain heard during live
+  // generation. Do not compress them a second time here; double compression
+  // is one of the quickest ways to make neural speech sound flat and robotic.
+  const compressed: Placed[] = placed;
 
   // Then set the loudness jump. A break arrives produced to its own rules, but
   // how loud that lands next to the show depends on the voices and on whether
@@ -497,6 +500,7 @@ export async function produceShow(
 
   let finalBuffer: Buffer;
   let duration: number;
+  let audioAnalysis: AudioAnalysis;
 
   if (policy.stereo) {
     // Place the hosts either side of centre so they are easier to tell apart.
@@ -535,6 +539,9 @@ export async function produceShow(
     stereo = normalizeStereo(stereo, 0.92);
     stereo = limitStereo(stereo, 0.97);
     stereo = resampleStereo(stereo, quality.sampleRate);
+    const mastered = masterStereo(stereo);
+    stereo = mastered.audio;
+    audioAnalysis = mastered.analysis;
 
     duration = stereo.left.length / stereo.sampleRate;
     finalBuffer = encodeWavStereo(stereo, quality.bitDepth);
@@ -555,6 +562,9 @@ export async function produceShow(
     mixed = normalize(mixed, 0.92);
     mixed = limit(mixed, 0.97);
     mixed = resample(mixed, quality.sampleRate);
+    const mastered = masterMono(mixed);
+    mixed = mastered.audio;
+    audioAnalysis = mastered.analysis;
 
     duration = durationOf(mixed);
     finalBuffer = encodeWav(mixed, quality.bitDepth);
@@ -563,7 +573,7 @@ export async function produceShow(
   const audioPath = path.join(showDir, "show.wav");
   fs.writeFileSync(audioPath, finalBuffer);
 
-  return { transcript, duration, audioPath, hasAudio: true };
+  return { transcript, duration, audioPath, hasAudio: true, audioAnalysis };
 }
 
 /** Average level of a set of clips, weighted by how long each one runs. */

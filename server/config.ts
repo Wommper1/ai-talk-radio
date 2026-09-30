@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { atomicWriteJson } from "./lib/atomic-file.ts";
+import { matchingPerformanceProfile } from "../shared/performance-profiles.ts";
 
 export type LlmProvider = "lmstudio" | "ollama" | "openai-compatible" | "gemini";
 export type TtsEngine = "sapi" | "piper" | "edge" | "none";
@@ -478,7 +479,7 @@ export const DEFAULT_CONFIG: Config = {
   memory: {
     enabled: true,
     historyTurns: 6,
-    updateEvery: 3,
+    updateEvery: 4,
     crossShow: true,
     backend: "lexical",
     embeddingModel: "text-embedding-nomic-embed-text-v1.5",
@@ -573,7 +574,7 @@ export const DEFAULT_CONFIG: Config = {
     compress: true,
   },
   show: {
-    performanceProfile: "balanced",
+    performanceProfile: "produced",
     station: "Local Talk Radio",
     style: "debate",
     turns: 24,
@@ -837,6 +838,14 @@ export function normalizeConfig(raw: unknown): Config {
     relationship: str(showIn.relationship, d.show.relationship).slice(0, 1000),
     directorNotes: str(showIn.directorNotes, d.show.directorNotes).slice(0, 2000),
   };
+
+  // Old configs did not have a profile label, and hand-edited settings can
+  // drift from the label. Never claim Balanced/Produced when the actual model
+  // calls, memory and imaging switches describe something else.
+  const actualProfile = matchingPerformanceProfile({ show, memory, imaging });
+  if (show.performanceProfile !== "custom" && show.performanceProfile !== actualProfile) {
+    show.performanceProfile = "custom";
+  }
 
   // ── King Orion's Realm ─────────────────────────────────────────
   //

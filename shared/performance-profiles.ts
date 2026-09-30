@@ -26,3 +26,22 @@ export function applyPerformanceProfile<T extends PerformanceSettings>(config: T
     imaging: { ...config.imaging, useIdent: values.imaging, useTransitions: values.imaging, useCallStings: values.imaging },
   };
 }
+
+/** Return the named preset only when every setting it owns still matches. */
+export function matchingPerformanceProfile(config: PerformanceSettings): PerformanceProfile {
+  for (const profile of ["fast", "balanced", "produced"] as const) {
+    const expected = applyPerformanceProfile(config, profile);
+    if (
+      config.show.useProducer === expected.show.useProducer &&
+      config.show.useOutline === expected.show.useOutline &&
+      config.show.generateNotes === expected.show.generateNotes &&
+      config.show.warmUpModel === expected.show.warmUpModel &&
+      config.memory.enabled === expected.memory.enabled &&
+      config.memory.updateEvery === expected.memory.updateEvery &&
+      config.imaging.useIdent === expected.imaging.useIdent &&
+      config.imaging.useTransitions === expected.imaging.useTransitions &&
+      config.imaging.useCallStings === expected.imaging.useCallStings
+    ) return profile;
+  }
+  return "custom";
+}

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { atomicWriteJson } from "../lib/atomic-file.ts";
 import type { Turn } from "./conversation.ts";
+import type { Config } from "../config.ts";
 
 const DRAFT_DIR = path.join(process.cwd(), "output", "drafts");
 
@@ -14,6 +15,8 @@ export interface ShowDraft {
   createdAt: string;
   updatedAt: string;
   turns: Turn[];
+  /** Snapshot of the desk used when the broadcast began. */
+  config?: Config;
 }
 
 function safe(id: string): boolean {

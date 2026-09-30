@@ -115,12 +115,36 @@ export function telephone(audio: AudioBuffer): AudioBuffer {
   return saturate(out, 1.6);
 }
 
-/** Slightly boxy, close-mic'd sound for the in-studio host. */
+/**
+ * Close broadcast-mic sound for an in-studio host.
+ *
+ * TTS already arrives perfectly clean, so reverb and heavy saturation make it
+ * sound more synthetic.  This chain instead follows a real voice booth:
+ * remove rumble, trim cardboard/mud, add intelligibility and just a little air.
+ */
 export function studio(audio: AudioBuffer): AudioBuffer {
-  let out = highpass(audio, 90);
-  out = peaking(out, 220, 2.5, 0.9); // chest warmth
-  out = peaking(out, 5200, 2, 1.1); // air
+  let out = highpass(audio, 72);
+  out = peaking(out, 155, 1.4, 0.75); // restrained proximity warmth
+  out = peaking(out, 330, -2.2, 1.05); // remove boxiness / mud
+  out = peaking(out, 2850, 1.8, 0.9); // consonant clarity
+  out = peaking(out, 7200, 1.15, 0.8); // open the top without harshness
   return out;
+}
+
+/** A gentle per-mic broadcast chain, shared by previews and final shows. */
+export function broadcastVoice(audio: AudioBuffer): AudioBuffer {
+  let out = compress(audio, {
+    thresholdDb: -22,
+    ratio: 2.35,
+    attackMs: 8,
+    releaseMs: 150,
+    kneeDb: 8,
+    makeupDb: 2.2,
+  });
+  // Barely-audible analogue density keeps thin neural voices from feeling
+  // detached, while the final limiter catches plosives before live playback.
+  out = saturate(out, 1.035);
+  return limit(out, 0.94, 2.5);
 }
 
 /** Distant / room sound for a remote guest without going full telephone. */

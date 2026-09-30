@@ -284,6 +284,65 @@ function piperVoices(config: TtsConfig): Voice[] {
 
 /* ── Edge TTS ────────────────────────────────────────────────────── */
 
+interface EdgeInvocation {
+  command: string;
+  prefix: string[];
+}
+
+/**
+ * Prefer the project-local Edge TTS environment.  A launcher installed by a
+ * different Python can remain on PATH after that Python is removed; invoking
+ * the module through our own interpreter avoids that very common Windows
+ * failure and makes the station portable.
+ */
+function edgeInvocation(): EdgeInvocation {
+  const configured = process.env.EDGE_TTS_PYTHON?.trim();
+  const bundled = path.join(
+    process.cwd(),
+    "tools",
+    "edge-tts",
+    process.platform === "win32" ? "Scripts/python.exe" : "bin/python",
+  );
+  const python = configured || (fs.existsSync(bundled) ? bundled : "");
+  return python
+    ? { command: python, prefix: ["-m", "edge_tts"] }
+    : { command: "edge-tts", prefix: [] };
+}
+
+async function runEdge(
+  args: string[],
+  opts: { timeoutSeconds: number; signal?: AbortSignal },
+): Promise<RunResult> {
+  const invocation = edgeInvocation();
+  try {
+    return await run(invocation.command, [...invocation.prefix, ...args], opts);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new TtsError(
+        "Edge TTS is not installed for this station.",
+        "Run npm run setup-edge-tts, or switch to a bundled Piper voice for offline speech.",
+      );
+    }
+    throw err;
+  }
+}
+
+// Microsoft's endpoint becomes unreliable when several CLI processes open
+// WebSockets at once (live hosts, a preview and a commercial render can all
+// meet here). Keep one station-wide lane and retry transient service failures.
+let edgeChain: Promise<void> = Promise.resolve();
+
+function waitForEdgeRetry(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new DOMException("Aborted", "AbortError"));
+    const timer = setTimeout(resolve, milliseconds);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }, { once: true });
+  });
+}
+
 /**
  * edge-tts always returns MP3, so decode it and re-emit WAV, keeping the rest
  * of the pipeline format-agnostic. Long text is passed via a file so quoting
@@ -309,26 +368,21 @@ async function edgeSynthesize(req: SynthesisRequest, config: TtsConfig, signal?:
   ];
 
   try {
-    let result: RunResult;
-    try {
-      result = await run("edge-tts", args, { timeoutSeconds: config.timeoutSeconds, signal });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new TtsError(
-          "edge-tts is not installed.",
-          "Install it with: pip install edge-tts — or switch the engine to Piper, which needs no install.",
-        );
-      }
-      throw err;
+    let result: RunResult = { code: null, stdout: "", stderr: "" };
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      fs.rmSync(mp3Path, { force: true });
+      result = await runEdge(args, { timeoutSeconds: config.timeoutSeconds, signal });
+      if (result.code === 0 && fs.existsSync(mp3Path) && fs.statSync(mp3Path).size >= 128) break;
+      if (attempt < 4) await waitForEdgeRetry(450 * 2 ** (attempt - 1), signal);
     }
 
     if (result.code !== 0 || !fs.existsSync(mp3Path)) {
       const stderr = result.stderr.trim();
       throw new TtsError(
-        `edge-tts failed: ${stderr.slice(0, 300) || `exit code ${result.code}`}`,
-        /network|resolve|connect|ssl|certificate/i.test(stderr)
-          ? "Edge TTS is a cloud service and needs an internet connection. Switch to Piper to work offline."
-          : undefined,
+        `edge-tts failed after 4 attempts: ${stderr.slice(0, 1600) || `exit code ${result.code}`}`,
+        /network|resolve|connect|ssl|certificate|websocket|no audio/i.test(stderr)
+          ? "Edge TTS is a cloud service and needs a stable internet connection. Switch to Piper to work offline."
+          : "Run npm run setup-edge-tts to repair the station voice engine.",
       );
     }
 
@@ -351,13 +405,16 @@ async function edgeSynthesize(req: SynthesisRequest, config: TtsConfig, signal?:
  * Older releases used "Name: xx-YY-ZzzNeural" lines, so both are handled.
  */
 async function edgeVoices(config: TtsConfig): Promise<Voice[]> {
-  let result: RunResult;
-  try {
-    result = await run("edge-tts", ["--list-voices"], { timeoutSeconds: Math.min(90, config.timeoutSeconds) });
-  } catch {
-    return [];
+  const result = await runEdge(["--list-voices"], { timeoutSeconds: Math.min(90, config.timeoutSeconds) });
+  if (result.code !== 0) {
+    const detail = result.stderr.trim().slice(0, 400) || `exit code ${result.code}`;
+    throw new TtsError(
+      `Edge TTS could not list voices: ${detail}`,
+      /network|resolve|connect|ssl|certificate/i.test(detail)
+        ? "Edge TTS needs internet access. Use Piper when the station must stay fully offline."
+        : "Run npm run setup-edge-tts to repair the station's private Edge TTS install.",
+    );
   }
-  if (result.code !== 0) return [];
 
   const voices: Voice[] = [];
 
@@ -449,7 +506,14 @@ export async function synthesize(req: SynthesisRequest, config: TtsConfig, signa
     case "piper":
       return piperSynthesize(req, config, signal);
     case "edge":
-      return edgeSynthesize(req, config, signal);
+      {
+        const queued = edgeChain.then(async () => {
+          if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+          await edgeSynthesize(req, config, signal);
+        });
+        edgeChain = queued.catch(() => {});
+        return queued;
+      }
     default:
       throw new TtsError("TTS is disabled.", "Choose a speech engine in Settings to generate audio.");
   }
@@ -466,7 +530,7 @@ export async function probeTts(config: TtsConfig): Promise<{ ok: boolean; voices
       const hints: Record<TtsEngine, string> = {
         sapi: "No Windows voices reported. Add voices under Settings > Time & Language > Speech.",
         piper: "Set the Piper voices folder in Settings and put .onnx voice models in it.",
-        edge: "Install the CLI with: pip install edge-tts",
+        edge: "Run npm run setup-edge-tts to install or repair the station voice engine.",
         none: "",
       };
       return { ok: false, voices: [], error: "No voices found for this engine.", hint: hints[config.engine] };

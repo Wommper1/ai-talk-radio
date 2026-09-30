@@ -239,12 +239,36 @@ export function unsupportedCourtClaim(text: string, briefing: string): string | 
   return unsupported.length ? unsupported.join(", ") : null;
 }
 
-function reportsOtherInsteadOfReplying(text: string, otherName: string): boolean {
+export function reportsOtherInsteadOfReplying(text: string, otherName: string): boolean {
   const escaped = otherName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(
-    `^\\s*${escaped}(?:'s| says| said| thinks| believes| warns| argues| is right| is correct| correctly| rightly| noted)\\b`,
+    `^\\s*${escaped}(?:'s| says| said| thinks| believes| warns| argues| is right| is correct| correctly| rightly| noted| has a point| makes (?:a )?(?:great|good|fair) point)\\b`,
     "i",
   ).test(text);
+}
+
+/**
+ * An opening record is production metadata, not a new character or business.
+ * Small roleplay models sometimes hear a back-announced title once and later
+ * promote it into a restaurant, employer, or local person. Once the record has
+ * been credited, an unrequested repeat is both unnecessary and risky.
+ */
+export function reusesOpeningRecord(
+  text: string,
+  openingRecord: { title: string; artist: string } | null,
+  topic: string,
+): string | null {
+  if (!openingRecord) return null;
+  const spoken = text.toLocaleLowerCase();
+  const subject = topic.toLocaleLowerCase();
+  const credits = [openingRecord.title.trim(), openingRecord.artist.trim()]
+    .filter((credit) => credit.length >= 4);
+
+  for (const credit of credits) {
+    const normalized = credit.toLocaleLowerCase();
+    if (!subject.includes(normalized) && spoken.includes(normalized)) return credit;
+  }
+  return null;
 }
 
 function chroniclerClaimsCommand(text: string): boolean {
@@ -979,6 +1003,11 @@ export function cleanLine(text: string, speakerName: string, otherName: string):
     parenthetical(inner) ? " " : whole,
   );
 
+  // Some local models copy the private prompt suffix into their reply and
+  // leave its parenthesis unclosed. Do not let production instructions become
+  // something the DJ says aloud.
+  out = out.replace(/\(\s*director(?:'s)?\s+note\s*:[\s\S]*$/i, " ");
+
   // A line wrapped end to end in asterisks is either a direction or a line the
   // model chose to emphasise wholesale, and length cannot tell those apart —
   // so only the verb and third-person tests apply here.
@@ -1274,6 +1303,8 @@ export async function runConversation(
    * reaches either speaker.
    */
   realmBriefing = "",
+  /** Completed lines from an interrupted broadcast. */
+  initialTurns: Turn[] = [],
 ): Promise<ConversationResult> {
   const [hostA, hostB] = config.hosts;
   const totalTurns = config.show.turns;
@@ -1322,7 +1353,10 @@ export async function runConversation(
     ? courtPromptFor("chronicler", config, topic, realmBriefing)
     : systemPromptFor(hostB, hostA, config, topic, research, recollections, brief);
 
-  const turns: Turn[] = [];
+  const turns: Turn[] = initialTurns
+    .filter((turn) => turn && typeof turn.text === "string" && turn.text.trim())
+    .map((turn, index) => ({ ...turn, index }));
+  const completedHostTurns = turns.filter((turn) => turn.hostId === "a" || turn.hostId === "b").length;
 
   // Set when a listener has just spoken, so the next host answers them.
   let pendingCaller: string | null = null;
@@ -1351,9 +1385,9 @@ export async function runConversation(
 
   // Hosts alternate, but a listener call inserts an extra turn without
   // taking one of theirs — so track whose turn it is separately from the loop.
-  let speakerToggle = 0;
+  let speakerToggle = completedHostTurns;
 
-  for (let i = 0; i < totalTurns; i++) {
+  for (let i = completedHostTurns; i < totalTurns; i++) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     // ── Anyone on the line? Put them on air before the next host speaks.
@@ -1436,6 +1470,14 @@ export async function runConversation(
     // effective guard against the show drifting onto a neighbouring subject.
     instruction += ` Stay on tonight's subject: ${topic}.`;
     instruction += " Make one substantive claim about the subject before any joke or character business.";
+    if (openingRecord && i > 0 && !court) {
+      const credit = openingRecord.artist
+        ? `"${openingRecord.title}" by ${openingRecord.artist}`
+        : `"${openingRecord.title}"`;
+      instruction +=
+        ` Production fact: ${credit} was the opening record, not a person, restaurant, company, place, ` +
+        "or example from tonight's subject. It has already been credited. Do not mention its title or artist again.";
+    }
 
     // A deterministic budget works better than asking a small model to infer
     // what "occasionally" means. Only one in five middle turns is invited to
@@ -1461,7 +1503,7 @@ export async function runConversation(
     }
 
     // Nudge away from the stock opener the model just used.
-    const openings = recentOpenings(turns);
+    const openings = recentOpenings(turns, 8);
     if (openings.length > 0) {
       instruction += ` Do not begin your line the way these did: ${openings.map((o) => `"${o}"`).join(", ")}.`;
     }
@@ -1746,6 +1788,64 @@ export async function runConversation(
 
       const fixed = trimToWordBudget(cleanLine(retry, host.name, other.name), host.maxWords);
       if (fixed && !fallsIntoBureaucracy(fixed, topic)) cleaned = fixed;
+    }
+
+    // The track credit belongs to the record break, once. If it reappears in
+    // the discussion, a small model can turn it into an invented restaurant or
+    // person and build several later turns on the false fact. Correct this
+    // before it enters history; unlike a style retry, factual contamination is
+    // never allowed through merely because the retry budget is exhausted.
+    const reusedRecord = cleaned ? reusesOpeningRecord(cleaned, openingRecord, topic) : null;
+    if (reusedRecord && i > 0 && !court) {
+      events.onInfo?.(`${host.name} reused the opening record "${reusedRecord}" as discussion material - removing the false reference.`);
+      const retry = await generate(config.llm, {
+        messages: [
+          ...baseMessages,
+          { role: "assistant", content: cleaned },
+          {
+            role: "user",
+            content:
+              `"${reusedRecord}" is only part of the opening music credit. It is not a restaurant, person, ` +
+              `company, place, or example about ${topic}. Rewrite the point with a real example that does not ` +
+              "mention the record title or artist. Do not replace it with another invented proper noun.",
+          },
+        ],
+        model: host.model || config.llm.model,
+        temperature: Math.max(0.5, host.temperature - 0.15),
+        maxTokens: turnTokens,
+        signal,
+      });
+      const fixed = trimToWordBudget(cleanLine(retry, host.name, other.name), host.maxWords);
+      cleaned = fixed && !reusesOpeningRecord(fixed, openingRecord, topic) ? fixed : "";
+    }
+
+    // This applies to the ordinary DJs as well as Night Court. "Dee makes a
+    // great point" is narration about the prior line, not a reply to it, and
+    // it produces the same synthetic cadence turn after turn.
+    if (cleaned && !court && reportsOtherInsteadOfReplying(cleaned, other.name)) {
+      events.onInfo?.(`${host.name} narrated ${other.name}'s position - asking for a direct reply.`);
+      const retry = await generate(config.llm, {
+        messages: [
+          ...baseMessages,
+          { role: "assistant", content: cleaned },
+          {
+            role: "user",
+            content:
+              `${other.name} just spoke and the listener heard it. Do not begin by reporting that ${other.name} ` +
+              "is right, has a point, or said something. Start on your own new fact, objection, question, or story, " +
+              "then advance the argument in new words.",
+          },
+        ],
+        model: host.model || config.llm.model,
+        temperature: Math.min(1.1, host.temperature + 0.1),
+        maxTokens: turnTokens,
+        signal,
+      });
+      const fixed = trimToWordBudget(cleanLine(retry, host.name, other.name), host.maxWords);
+      // A report about the last line is never preferable to a clean skip. If
+      // the correction repeats the same mistake, do not teach the next turn to
+      // imitate it by placing it in conversation history.
+      cleaned = fixed && !reportsOtherInsteadOfReplying(fixed, other.name) ? fixed : "";
     }
 
     // A line that talks to its own speaker is always the model losing track of

@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { atomicWriteJson } from "../lib/atomic-file.ts";
+import type { AudioAnalysis } from "../audio/loudness.ts";
 import type { TranscriptLine } from "./produce.ts";
 
 /** Increment when older generated dialogue should no longer seed new shows. */
@@ -33,6 +34,8 @@ export interface StoredShow {
   models: string[];
   /** Dialogue-generation format used for cross-show recall eligibility. */
   generationVersion?: number;
+  /** Integrated loudness and peak measurements for the finished master. */
+  audioAnalysis?: AudioAnalysis;
   /** URLs the client uses; filled in when the show is listed. */
   audioUrl?: string;
   coverUrl?: string;
@@ -154,6 +157,8 @@ export interface StorageSummary {
   fileCount: number;
   /** Transient working files that are safe to clear. */
   scratchBytes: number;
+  /** Folders without readable show metadata; reported, never auto-deleted. */
+  orphaned: Array<{ id: string; bytes: number }>;
   shows: Array<{ id: string; title: string; createdAt: string; bytes: number; hasAudio: boolean }>;
 }
 
@@ -163,6 +168,11 @@ function dirBytes(dir: string): number {
 
 export function storageSummary(): StorageSummary {
   const shows = listShows();
+  const orphaned = fs.existsSync(SHOWS_DIR)
+    ? fs.readdirSync(SHOWS_DIR, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && isSafeId(entry.name) && !readShow(entry.name))
+        .map((entry) => ({ id: entry.name, bytes: dirBytes(path.join(SHOWS_DIR, entry.name)) }))
+    : [];
   const perShow = shows.map((s) => {
     const files = walk(showDir(s.id));
     return {
@@ -181,6 +191,7 @@ export function storageSummary(): StorageSummary {
     showCount: perShow.length,
     fileCount: perShow.reduce((n, s) => n + s.fileCount, 0),
     scratchBytes: dirBytes(path.join(process.cwd(), "output")),
+    orphaned,
     shows: perShow.map(({ fileCount: _ignored, ...rest }) => rest),
   };
 }

@@ -575,6 +575,13 @@ export function memoryBlock(memory: ShowMemory, hostName: string, allowCallback 
 const FILLER = [
   "that's a great point",
   "that's a fair point",
+  "that's exactly",
+  "that's so true",
+  "that's precisely",
+  "i love that idea",
+  "you raise a fair point",
+  "you make a fair point",
+  "absolutely right",
   "i see where you're coming from",
   "i hear what you're saying",
   "that's a good question",
@@ -672,13 +679,32 @@ export function echoesPrevious(text: string, turns: Array<{ text: string }>, run
 }
 
 export function repeatsOpening(text: string, previous: Turn[]): string | null {
-  const opening = text.trim().toLowerCase().slice(0, 40);
+  const opening = text.trim().toLowerCase().slice(0, 80);
 
   const usedFiller = FILLER.find((f) => opening.startsWith(f));
-  if (!usedFiller) return null;
+  if (usedFiller) {
+    const alreadyUsed = previous.slice(-8).some((t) => t.text.trim().toLowerCase().startsWith(usedFiller));
+    // The opening exchange gets some grace. After that, rotating among five
+    // different generic agreements is still one audible chatbot habit.
+    if (alreadyUsed || previous.length >= 2) return usedFiller;
+  }
 
-  const alreadyUsed = previous.slice(-4).some((t) => t.text.trim().toLowerCase().startsWith(usedFiller));
-  return alreadyUsed ? usedFiller : null;
+  // Filler is only one form of a groove. Long shows also develop perfectly
+  // ordinary but very audible templates: "I think there's room...", "Marco,
+  // I think...", "The real issue is...". Compare the first three spoken words
+  // across the recent show, which is the same unit the transcript audit uses.
+  const key = (value: string): string =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9' ]/g, " ")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(" ");
+
+  const fingerprint = key(text);
+  if (fingerprint.split(" ").length < 3) return null;
+  return previous.slice(-12).some((turn) => key(turn.text) === fingerprint) ? fingerprint : null;
 }
 
 /**

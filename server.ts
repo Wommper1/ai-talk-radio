@@ -75,6 +75,7 @@ import {
 } from "./server/pipeline/bucketwriter.ts";
 import { runResearch, type ResearchResult } from "./server/pipeline/research.ts";
 import { produceShow, renderTurnClip, hostFor } from "./server/pipeline/produce.ts";
+import { MAX_MIX_SECONDS } from "./shared/mix-policy.ts";
 import {
   planBreaks,
   renderBreak,
@@ -169,11 +170,28 @@ import {
   type AudioBuffer,
 } from "./server/audio/wav.ts";
 import { STING_LENGTHS, makeSting } from "./server/audio/stings.ts";
-import { applyTone } from "./server/audio/effects.ts";
+import { applyTone, broadcastVoice } from "./server/audio/effects.ts";
 import { groupCommercialBreaks } from "./shared/commercial-rotation.ts";
 import { jobIdProblem, shouldWarmUpShow } from "./shared/show-job.ts";
 import { missingModels } from "./shared/model-preflight.ts";
 import { listDrafts, readDraft, removeDraft, saveDraft, type ShowDraft } from "./server/pipeline/drafts.ts";
+import {
+  BACKUPS_DIR,
+  automationStatus,
+  clearPlayoutQueue,
+  completePlayoutItem,
+  createStationBackup,
+  enqueueShow,
+  fallbackPlayoutItems,
+  listStationBackups,
+  nextPlayoutItem,
+  removeQueuedShow,
+  removeScheduleSlot,
+  restoreStationBackup,
+  startStationAutomation,
+  updateAutomationSettings,
+  upsertScheduleSlot,
+} from "./server/station/automation.ts";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === "production";
@@ -585,6 +603,203 @@ async function main() {
     res.json(await probeTts(config.tts));
   });
 
+  /** One operator-facing view of everything required to put a show on air. */
+  app.post("/api/station/status", async (req, res) => {
+    const config = withOverrides(loadConfig(), req.body?.config);
+    const [model, speech] = await Promise.all([
+      probeLlm(config.llm),
+      config.tts.engine === "none"
+        ? Promise.resolve({ ok: true, voices: [] as Array<{ id: string; label: string }>, error: undefined })
+        : probeTts(config.tts),
+    ]);
+    const storage = storageSummary();
+    let freeBytes = 0;
+    try {
+      const disk = fs.statfsSync(process.cwd());
+      freeBytes = Number(disk.bavail) * Number(disk.bsize);
+    } catch {
+      // The report still works when the filesystem does not expose capacity.
+    }
+    const brain = activeBrainVersion();
+    const commercials = bucketStats(brain.id);
+    const commercialAudit = auditBucket();
+    const requiredForShow = config.ads.enabled ? config.ads.breaks * config.ads.spotsPerBreak : 0;
+    const selectedModels = [
+      config.llm.model,
+      ...config.hosts.map((host) => host.model),
+      ...(config.show.useProducer || config.show.useOutline ? [config.llm.producerModel] : []),
+      ...(config.show.generateNotes ? [config.llm.notesModel] : []),
+      ...(config.ads.enabled ? [config.llm.commercialModel] : []),
+    ].filter(Boolean);
+    const unavailable = missingModels(selectedModels, model.models?.map((item) => item.id) ?? []);
+    const wordsPerMinute = 155;
+    const estimatedSeconds = config.show.turns * Math.max(...config.hosts.map((host) => host.maxWords)) / wordsPerMinute * 60 +
+      config.show.turns * config.show.gapSeconds +
+      (config.ads.enabled ? config.ads.breaks * (2 + config.ads.spotsPerBreak * (config.ads.spotWords / wordsPerMinute * 60 + 1.3)) : 0) +
+      (config.show.useColdOpen ? 13 : 0) +
+      (config.show.openingSong.enabled && config.show.openingSong.file ? 210 : 0) +
+      config.show.outroSeconds;
+    const recentShows = listShows().slice(0, 5).map((show) => ({
+      id: show.id,
+      title: show.title,
+      createdAt: show.createdAt,
+      duration: show.duration,
+      integratedLufs: show.audioAnalysis?.integratedLufs ?? null,
+      truePeakDbtp: show.audioAnalysis?.truePeakDbtp ?? null,
+      streamingReady: show.audioAnalysis?.streamingReady ?? null,
+    }));
+
+    const checks: Array<{ id: string; label: string; status: "pass" | "warning" | "blocker"; detail: string }> = [
+      {
+        id: "model",
+        label: "Language model",
+        status: model.ok && unavailable.length === 0 ? "pass" : "blocker",
+        detail: !model.ok ? model.error ?? "LM Studio is unavailable." : unavailable.length ? `Not loaded: ${unavailable.join(", ")}` : `${config.llm.model} is available.`,
+      },
+      {
+        id: "speech",
+        label: "DJ voices",
+        status: config.tts.engine === "none" ? "warning" : speech.ok ? "pass" : "blocker",
+        detail: config.tts.engine === "none" ? "Speech is off; this production will be transcript-only." : speech.ok ? `${speech.voices?.length ?? 0} ${config.tts.engine} voices available.` : speech.error ?? "The speech engine is unavailable.",
+      },
+      {
+        id: "disk",
+        label: "Recording storage",
+        status: freeBytes > 0 && freeBytes < 5 * 1024 ** 3 ? "blocker" : freeBytes > 0 && freeBytes < 10 * 1024 ** 3 ? "warning" : "pass",
+        detail: freeBytes > 0 ? `${(freeBytes / 1024 ** 3).toFixed(1)} GB free; ${(storage.totalBytes / 1024 ** 3).toFixed(1)} GB of finished shows.` : "Free-space reporting is unavailable.",
+      },
+      {
+        id: "running-order",
+        label: "Running order",
+        status: estimatedSeconds > MAX_MIX_SECONDS ? "blocker" : estimatedSeconds > MAX_MIX_SECONDS * 0.85 ? "warning" : "pass",
+        detail: `${Math.round(estimatedSeconds / 60)} minute estimate; the protected mix limit is ${Math.round(MAX_MIX_SECONDS / 60)} minutes.`,
+      },
+      {
+        id: "commercials",
+        label: "Commercial rotation",
+        status: !config.ads.enabled || commercials.rotation >= requiredForShow ? "pass" : "warning",
+        detail: !config.ads.enabled ? "Commercials are off." : `${commercials.rotation} ready for rotation; ${requiredForShow} requested for this show. Missing spots will be written live.`,
+      },
+      {
+        id: "commercial-audit",
+        label: "Commercial files",
+        status: commercialAudit.ok ? "pass" : commercialAudit.issues.some((issue) => issue.severity === "error") ? "warning" : "warning",
+        detail: commercialAudit.ok ? "Bucket index and audio files agree." : `${commercialAudit.issues.length} bucket issue${commercialAudit.issues.length === 1 ? "" : "s"} need attention.`,
+      },
+      {
+        id: "master",
+        label: "Recent master",
+        status: recentShows[0]?.streamingReady === false ? "warning" : "pass",
+        detail: recentShows[0]?.streamingReady === true
+          ? `${recentShows[0].integratedLufs?.toFixed(1)} LUFS-I, ${recentShows[0].truePeakDbtp?.toFixed(1)} dBTP.`
+          : recentShows[0]?.streamingReady === false
+            ? "The most recent measured show needs a level review."
+            : "The next show will be the first one saved with LUFS and true-peak measurements.",
+      },
+      {
+        id: "orphans",
+        label: "Show folders",
+        status: storage.orphaned.length ? "warning" : "pass",
+        detail: storage.orphaned.length ? `${storage.orphaned.length} incomplete show folder${storage.orphaned.length === 1 ? " is" : "s are"} preserved for review.` : "No incomplete show folders found.",
+      },
+    ];
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      ready: !checks.some((check) => check.status === "blocker"),
+      checks,
+      model: { ok: model.ok && unavailable.length === 0, selected: config.llm.model, available: model.models?.map((item) => item.id) ?? [], error: model.error },
+      speech: { ok: speech.ok, engine: config.tts.engine, voices: speech.voices?.length ?? 0, error: speech.error },
+      // Keep preflight responses small: the operator view only needs a recent
+      // sample, while the Files page owns the complete recording inventory.
+      storage: { ...storage, shows: storage.shows.slice(0, 5), freeBytes },
+      commercials: { total: commercials.total, rotation: commercials.rotation, requiredForShow, issues: commercialAudit.issues.length, auditOk: commercialAudit.ok },
+      recentShows,
+    });
+  });
+
+  /* ── Unattended station automation ─────────────────────────── */
+
+  app.get("/api/automation", (_req, res) => res.json(automationStatus()));
+
+  app.put("/api/automation", (req, res) => {
+    try {
+      res.json(updateAutomationSettings(req.body ?? {}));
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  app.post("/api/automation/slots", (req, res) => {
+    try {
+      res.json({ slot: upsertScheduleSlot(req.body ?? {}), status: automationStatus() });
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  app.delete("/api/automation/slots/:id", (req, res) => {
+    if (!removeScheduleSlot(req.params.id)) return res.status(404).json({ error: "Schedule slot not found" });
+    res.json(automationStatus());
+  });
+
+  app.post("/api/playout/queue/:id", (req, res) => {
+    try {
+      res.json(enqueueShow(req.params.id));
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  app.delete("/api/playout/queue/:id", (req, res) => res.json(removeQueuedShow(req.params.id)));
+  app.delete("/api/playout/queue", (_req, res) => res.json(clearPlayoutQueue()));
+  app.post("/api/playout/next", (_req, res) => res.json({ item: nextPlayoutItem() }));
+  app.post("/api/playout/complete", (_req, res) => res.json(completePlayoutItem()));
+
+  /** A portable playlist for VLC, OBS, or another playout application. */
+  app.get("/api/playout/listen.m3u", (req, res) => {
+    const status = automationStatus();
+    const origin = `${req.protocol}://${req.get("host")}`;
+    const scheduled = [...(status.current ? [status.current] : []), ...status.queue];
+    const items = scheduled.length ? scheduled : fallbackPlayoutItems();
+    const lines = ["#EXTM3U"];
+    for (const item of items) {
+      lines.push(`#EXTINF:${Math.round(item.duration)},${item.title}`);
+      lines.push(`${origin}${item.audioUrl}`);
+    }
+    res.type("audio/x-mpegurl").send(`${lines.join("\n")}\n`);
+  });
+
+  app.get("/api/backups", (_req, res) => res.json({ backups: listStationBackups() }));
+
+  app.post("/api/backups", (req, res) => {
+    try {
+      const kind = req.body?.kind === "full" ? "full" : "state";
+      res.json({ backup: createStationBackup(kind), backups: listStationBackups() });
+    } catch (error) {
+      res.status(500).json({ error: (error as Error).message });
+    }
+  });
+
+  app.post("/api/backups/:id/restore", (req, res) => {
+    if (req.body?.confirm !== req.params.id) {
+      return res.status(400).json({ error: "Type the backup id exactly to confirm restore." });
+    }
+    if (running.size > 0) return res.status(409).json({ error: "Wait for the running production to finish before restoring." });
+    try {
+      res.json({ backup: restoreStationBackup(req.params.id), restartRequired: true });
+    } catch (error) {
+      res.status(400).json({ error: (error as Error).message });
+    }
+  });
+
+  app.post("/api/backups/reveal", (_req, res) => {
+    fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+    const command = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+    spawn(command, [BACKUPS_DIR], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+    res.json({ ok: true, path: BACKUPS_DIR });
+  });
+
   /** Speak one line so voices can be auditioned without generating a show. */
   app.post("/api/preview-voice", async (req, res) => {
     const config = withOverrides(loadConfig(), req.body?.config);
@@ -610,7 +825,7 @@ async function main() {
       );
 
       let clip = resample(decodeWav(fs.readFileSync(tmpPath)), SAMPLE_RATE);
-      clip = normalize(applyTone(trimSilence(clip), host.tone), 0.89);
+      clip = normalize(broadcastVoice(applyTone(trimSilence(clip), host.tone)), 0.89);
 
       res.setHeader("Content-Type", "audio/wav");
       res.setHeader("Cache-Control", "no-store");
@@ -1485,9 +1700,14 @@ async function main() {
   });
 
   app.post("/api/generate", async (req, res) => {
-    const topic = String(req.body?.topic ?? "").trim();
+    const resumeDraftId = String(req.body?.resumeDraftId ?? "").trim();
+    const resumeDraft = resumeDraftId ? readDraft(resumeDraftId) : null;
+    if (resumeDraftId && !resumeDraft) {
+      return res.status(404).json({ error: "That interrupted broadcast is no longer available." });
+    }
+    const topic = (resumeDraft?.topic ?? String(req.body?.topic ?? "")).trim();
     const jobId = String(req.body?.jobId ?? "").trim() || makeShowId("job");
-    let config: Config = withOverrides(loadConfig(), req.body?.config);
+    let config: Config = resumeDraft?.config ?? withOverrides(loadConfig(), req.body?.config);
     const researchSources: string[] = Array.isArray(req.body?.sources)
       ? req.body.sources.map((s: unknown) => String(s)).slice(0, 10)
       : [];
@@ -1496,6 +1716,23 @@ async function main() {
 
     if (!topic) {
       return res.status(400).json({ error: "Give the show a topic." });
+    }
+    // Reject an impossible running order before the model writes a word. This
+    // is deliberately conservative; real turns are often shorter, but a show
+    // must never spend an hour generating only to fail at the final mix.
+    const wordsPerMinute = 155;
+    const spokenSeconds = config.show.turns * Math.max(...config.hosts.map((host) => host.maxWords)) / wordsPerMinute * 60;
+    const breakSeconds = config.ads.enabled
+      ? config.ads.breaks * (2 + config.ads.spotsPerBreak * (config.ads.spotWords / wordsPerMinute * 60 + 1.3))
+      : 0;
+    const estimatedSeconds = spokenSeconds + config.show.turns * config.show.gapSeconds + breakSeconds +
+      (config.show.useColdOpen ? 13 : 0) + (config.show.openingSong.enabled && config.show.openingSong.file ? 210 : 0) +
+      config.show.outroSeconds;
+    if (estimatedSeconds > MAX_MIX_SECONDS) {
+      return res.status(400).json({
+        error: `This running order is estimated at ${Math.round(estimatedSeconds / 60)} minutes; the safe episode limit is ${Math.round(MAX_MIX_SECONDS / 60)} minutes.`,
+        hint: "Reduce turns or commercial load, or record it as two episodes.",
+      });
     }
     const jobProblem = jobIdProblem(jobId, new Set(running.keys()));
     if (jobProblem) return res.status(running.has(jobId) ? 409 : 400).json({ error: jobProblem });
@@ -2052,13 +2289,18 @@ async function main() {
           })
         : [];
       const shelved = shelvedBreaks(pack);
-      const usingBucket = positions.length > 0 && fromBucket.length >= bucketSpotCount;
-      const fromShelf = !usingBucket && positions.length > 0 && shelved.length >= positions.length;
+      const bucketBreakCount = Math.min(
+        positions.length,
+        Math.floor(fromBucket.length / config.ads.spotsPerBreak),
+      );
+      const usingBucket = positions.length > 0 && bucketBreakCount === positions.length;
+      const usingSomeBucket = bucketBreakCount > 0;
+      const fromShelf = !usingSomeBucket && positions.length > 0 && shelved.length >= positions.length;
 
       if (!usingBucket && !fromShelf && positions.length > 0) {
         // The single largest cost in a show, and the one worth naming out loud
         // rather than leaving the listener to wonder where the time went.
-        const fresh = positions.length * config.ads.spotsPerBreak;
+        const fresh = (positions.length - bucketBreakCount) * config.ads.spotsPerBreak;
         send({
           type: "info",
           message:
@@ -2067,16 +2309,20 @@ async function main() {
         });
       }
 
-      if (usingBucket) {
+      if (usingSomeBucket) {
         send({
           type: "info",
           message:
-            `${positions.length} break${positions.length === 1 ? "" : "s"} out of the commercial bucket — ` +
-            "nothing to write.",
+            `${bucketBreakCount} break${bucketBreakCount === 1 ? "" : "s"} out of the commercial bucket` +
+            (usingBucket ? " — nothing to write." : `; writing only the remaining ${positions.length - bucketBreakCount}.`),
         });
 
-        const groupedSpots = groupCommercialBreaks(fromBucket, positions.length, config.ads.spotsPerBreak);
-        positions.forEach((_, index) => {
+        const groupedSpots = groupCommercialBreaks(
+          fromBucket.slice(0, bucketBreakCount * config.ads.spotsPerBreak),
+          bucketBreakCount,
+          config.ads.spotsPerBreak,
+        );
+        positions.slice(0, bucketBreakCount).forEach((_, index) => {
           const spots = groupedSpots[index] ?? [];
           const sources = spots.map((spot) => audioFor(spot.id));
           if (sources.some((source) => !source)) return;
@@ -2126,8 +2372,11 @@ async function main() {
           : (async () => {
               send({ type: "stage", stage: "ads" });
               try {
+                const remainingConfig = bucketBreakCount > 0
+                  ? { ...config, ads: { ...config.ads, breaks: positions.length - bucketBreakCount } }
+                  : config;
                 plannedBreaks = await planBreaks(
-                  config,
+                  remainingConfig,
                   topic,
                   signal,
                   (message) => send({ type: "info", message }),
@@ -2135,6 +2384,9 @@ async function main() {
                   // no sponsors, and are never a repeat off the shelf.
                   realmBriefing ? { places: realmPlaces(realm) } : undefined,
                 );
+                if (bucketBreakCount > 0) {
+                  plannedBreaks = plannedBreaks.map((brk) => ({ ...brk, index: brk.index + bucketBreakCount }));
+                }
               } catch (err) {
                 if ((err as Error).name === "AbortError") throw err;
                 send({ type: "info", message: `Ad break skipped: ${(err as Error).message}` });
@@ -2211,15 +2463,54 @@ async function main() {
         station: config.show.station,
         style: config.show.style,
         mood: config.show.mood,
-        createdAt: new Date().toISOString(),
+        createdAt: resumeDraft?.createdAt ?? new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        turns: [],
+        turns: resumeDraft ? [...resumeDraft.turns] : [],
+        config,
       };
+
+      // Turn index -> already-treated voice clip. On a resumed broadcast this
+      // begins with the clips made before the interruption, so recovery does
+      // not call the speech service again or change a voice that was already
+      // heard on air.
+      const prerendered = new Map<number, string>();
+
+      if (resumeDraft?.turns.length) {
+        send({
+          type: "info",
+          message: `Resuming after ${resumeDraft.turns.length} completed line${resumeDraft.turns.length === 1 ? "" : "s"}.`,
+        });
+        for (const turn of resumeDraft.turns) {
+          send({ type: "turn_start", index: turn.index, speaker: turn.speaker, hostId: turn.hostId });
+          send({ type: "turn_end", turn });
+        }
+
+        const priorLiveDir = path.join(process.cwd(), "output", "live", resumeDraft.id);
+        let reusedAudio = 0;
+        fs.mkdirSync(liveDir, { recursive: true });
+        for (const turn of resumeDraft.turns) {
+          const name = `${String(turn.index).padStart(3, "0")}.wav`;
+          const source = path.join(priorLiveDir, name);
+          const target = path.join(liveDir, name);
+          try {
+            if (!fs.existsSync(source) || durationOf(decodeWav(fs.readFileSync(source))) < 0.5) continue;
+            if (path.resolve(source) !== path.resolve(target)) fs.copyFileSync(source, target);
+            prerendered.set(turn.index, target);
+            reusedAudio++;
+          } catch {
+            // The final mix will render only this missing line again.
+          }
+        }
+        if (reusedAudio > 0) {
+          send({
+            type: "info",
+            message: `Reused ${reusedAudio} completed voice clip${reusedAudio === 1 ? "" : "s"}; only missing audio will be rendered again.`,
+          });
+        }
+      }
 
       // Speak each line as soon as it exists, so the listener hears the show
       // being made instead of watching text for minutes and then getting a file.
-      const prerendered = new Map<number, string>();
-
       // Serialises live speech without blocking the conversation loop.
       let speechChain: Promise<void> = Promise.resolve();
 
@@ -2295,7 +2586,14 @@ async function main() {
               .then(async () => {
                 const voiceStarted = Date.now();
                 const clipPath = path.join(liveDir, `${String(turn.index).padStart(3, "0")}.wav`);
-                const clip = await renderTurnClip(config, hostFor(config, turn.hostId), turn.text, clipPath, signal);
+                let clip;
+                try {
+                  clip = await renderTurnClip(config, hostFor(config, turn.hostId), turn.text, clipPath, signal);
+                } catch (firstError) {
+                  if ((firstError as Error).name === "AbortError") throw firstError;
+                  send({ type: "info", message: `${turn.speaker}'s line did not render; retrying that line only.` });
+                  clip = await renderTurnClip(config, hostFor(config, turn.hostId), turn.text, clipPath, signal);
+                }
                 timing("Voice", Date.now() - voiceStarted, { index: turn.index });
                 prerendered.set(turn.index, clipPath);
 
@@ -2309,7 +2607,7 @@ async function main() {
               .catch((err: Error) => {
                 if (err.name === "AbortError") return;
                 // Losing live audio must never lose the show; the mix re-renders.
-                send({ type: "info", message: `Could not speak that line yet: ${err.message}` });
+                send({ type: "info", message: `Could not speak that line yet: ${err.message}. The final mix will retry only that missing line.` });
               });
           },
 
@@ -2353,6 +2651,7 @@ async function main() {
         // opening as though nothing had been playing.
         songTitle ? songDetails(config, path.basename(resolveSongFile(songConfig.file) ?? "")) : null,
         realmBriefing,
+        resumeDraft?.turns ?? [],
       );
       timing("Conversation", Date.now() - conversationStarted);
 
@@ -2453,14 +2752,16 @@ async function main() {
         transcript: produced.transcript,
         models: Array.from(new Set(config.hosts.map((h) => h.model || config.llm.model))).filter(Boolean),
         generationVersion: CURRENT_SHOW_FORMAT,
+        audioAnalysis: produced.audioAnalysis,
       };
 
       saveShow(show);
       removeDraft(jobId);
+      if (resumeDraft) removeDraft(resumeDraft.id);
 
       // Rotation history describes broadcasts that actually completed. A
       // cancelled or failed show must leave tonight's unused spots available.
-      if (usingBucket) markBucketPlayedMany([...usedBucketIds]);
+      if (usedBucketIds.size > 0) markBucketPlayedMany([...usedBucketIds]);
 
       // ── What is worth keeping for next time.
       //
@@ -2569,6 +2870,7 @@ async function main() {
   app.get("/api/health", (_req, res) =>
     res.json({
       ok: true,
+      app: "local-talk-radio",
       startedAt: new Date(BOOTED_AT).toISOString(),
       codeAt: new Date(newestCodeTime()).toISOString(),
       stale: newestCodeTime() > BOOTED_AT,
@@ -2626,7 +2928,7 @@ async function main() {
     app.use(vite.middlewares);
   }
 
-  listen(app, PORT);
+  listen(app, PORT, 0, (port) => startStationAutomation(`http://127.0.0.1:${port}`));
 }
 
 /**
@@ -2689,15 +2991,16 @@ function newestCodeTime(): number {
   return newest;
 }
 
-function listen(app: express.Express, port: number, attempt = 0) {
+function listen(app: express.Express, port: number, attempt = 0, onListening?: (port: number) => void) {
   const server = app
     .listen(port, "127.0.0.1", () => {
       console.log(`\n  Local Talk Radio  →  http://localhost:${port}\n`);
+      onListening?.(port);
     })
     .on("error", (err: NodeJS.ErrnoException) => {
       if (err.code === "EADDRINUSE" && attempt < 10) {
         console.log(`Port ${port} is busy, trying ${port + 1}...`);
-        listen(app, port + 1, attempt + 1);
+        listen(app, port + 1, attempt + 1, onListening);
       } else {
         console.error(err);
         process.exit(1);
