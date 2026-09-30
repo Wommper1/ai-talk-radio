@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { synthesize, probeTts } from "../server/providers/tts.ts";
 import { decodeWav, durationOf, encodeWav, normalize, resample, trimSilence, SAMPLE_RATE } from "../server/audio/wav.ts";
-import { applyTone } from "../server/audio/effects.ts";
+import { applyTone, broadcastVoice } from "../server/audio/effects.ts";
 import { loadConfig, voiceFor, type TtsEngine } from "../server/config.ts";
 
 const config = loadConfig();
@@ -62,7 +62,7 @@ for (const engine of engines) {
 
     // Run it through the same chain the show pipeline uses.
     let clip = resample(decodeWav(fs.readFileSync(raw)), SAMPLE_RATE);
-    clip = normalize(applyTone(trimSilence(clip), host.tone), 0.89);
+    clip = normalize(broadcastVoice(applyTone(trimSilence(clip), host.tone)), 0.86);
 
     const shaped = path.join(outDir, `${engine}-${host.id}-${host.tone}.wav`);
     fs.writeFileSync(shaped, encodeWav(clip));

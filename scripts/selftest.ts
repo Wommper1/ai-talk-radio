@@ -52,11 +52,14 @@ import { CURRENT_AD_LIBRARY_FORMAT, pickForReuse } from "../server/pipeline/adli
 import { matchAdLoudness, type Placed } from "../server/pipeline/produce.ts";
 import { normalizeConfig, DEFAULT_CONFIG } from "../server/config.ts";
 import { duck, applyTone, compress, limit } from "../server/audio/effects.ts";
+import { analyseLoudness, masterStereo } from "../server/audio/loudness.ts";
 import {
   addressesSelf,
   beatsFromText,
   cleanLine,
   fallsIntoBureaucracy,
+  reportsOtherInsteadOfReplying,
+  reusesOpeningRecord,
   runConversation,
   unsupportedCourtClaim,
 } from "../server/pipeline/conversation.ts";
@@ -69,6 +72,14 @@ import { isSafeJobId, jobIdProblem, shouldWarmUpShow } from "../shared/show-job.
 import { applyPerformanceProfile } from "../shared/performance-profiles.ts";
 import { missingModels } from "../shared/model-preflight.ts";
 import { LOW_MEMORY_MIX_SECONDS, MAX_MIX_SECONDS, mixPolicy } from "../shared/mix-policy.ts";
+import {
+  normalizeScheduleSlot,
+  safeAutomationId,
+  scheduleSlotDue,
+  slotRunKey,
+  stationDateKey,
+  validStationTime,
+} from "../shared/station-automation.ts";
 import {
   GUILD_NAME,
   readRealm,
@@ -125,6 +136,27 @@ const bed = generateBed(6, "tech", 42);
 check("bed has the requested duration", Math.abs(durationOf(bed) - 6) < 0.05, `${durationOf(bed).toFixed(3)}s`);
 check("bed samples are all finite", allFinite(bed.data));
 check("bed is not silent", peakOf(bed.data) > 0.01, `peak ${peakOf(bed.data).toFixed(3)}`);
+
+console.log("\n─── station automation ───\n");
+
+const scheduleNow = new Date(2026, 8, 27, 9, 30, 0);
+const scheduleSlot = normalizeScheduleSlot({
+  id: "morning-drive",
+  enabled: true,
+  name: "Morning drive",
+  topic: "What the city is talking about",
+  time: "09:30",
+  days: [0],
+  turns: 24,
+});
+check("station time accepts a real clock value", validStationTime("23:59"));
+check("station time refuses an impossible value", !validStationTime("24:60"));
+check("scheduled show becomes due at its local minute", scheduleSlotDue(scheduleSlot, scheduleNow));
+scheduleSlot.lastRunKey = slotRunKey(scheduleSlot, scheduleNow);
+check("scheduled show runs only once per day", !scheduleSlotDue(scheduleSlot, scheduleNow));
+check("station date keys use local calendar days", stationDateKey(scheduleNow) === "2026-09-27");
+check("backup and schedule ids reject traversal", safeAutomationId("backup-2026") && !safeAutomationId("../backup"));
+check("schedule turn counts are bounded", normalizeScheduleSlot({ turns: 500 }).turns === 60);
 
 // Deterministic from seed
 const bedA = generateBed(2, "chill", 99);
@@ -239,6 +271,28 @@ check("stereo header declares 2 channels", stereoWav.readUInt16LE(22) === 2);
 check("stereo byte count is interleaved", stereoWav.length === 44 + pl.length * 2 * 2);
 const stereoBack = decodeWav(stereoWav);
 check("stereo decodes as the mono downmix", Math.abs(peakOf(stereoBack.data) - peakOf(pl) / 2) < 0.01);
+
+const quietFrames = 48_000 * 2;
+const quietLeft = new Float32Array(quietFrames);
+const quietRight = new Float32Array(quietFrames);
+for (let i = 0; i < quietFrames; i++) {
+  const sample = Math.sin(2 * Math.PI * 440 * i / 48_000) * 0.035;
+  quietLeft[i] = sample;
+  quietRight[i] = sample;
+}
+const quietAnalysis = analyseLoudness({ sampleRate: 48_000, channels: [quietLeft, quietRight] });
+check("integrated loudness is measured", quietAnalysis.integratedLufs !== null && Number.isFinite(quietAnalysis.integratedLufs));
+check("true peak is measured", quietAnalysis.truePeakDbtp !== null && Number.isFinite(quietAnalysis.truePeakDbtp));
+const masteredQuiet = masterStereo({ sampleRate: 48_000, left: quietLeft, right: quietRight });
+check(
+  "streaming master moves quiet material toward the target",
+  Math.abs((masteredQuiet.analysis.integratedLufs ?? -100) + 16) < Math.abs((quietAnalysis.integratedLufs ?? -100) + 16),
+);
+check(
+  "streaming master respects the true-peak ceiling",
+  (masteredQuiet.analysis.truePeakDbtp ?? 0) <= -0.9,
+  `${masteredQuiet.analysis.truePeakDbtp} dBTP`,
+);
 
 // Compression should reduce dynamic range, not destroy the signal.
 const dyn = new Float32Array(44100);
@@ -382,6 +436,10 @@ check("a narrator label is stripped", king("Narrator: The hall went quiet.") ===
 check("third-person narration of himself is gone", king("*He sets down the cup.* Bring him in.") === "Bring him in.");
 check("an unclosed direction is still a direction", king("*he leans forward in the chair. Bring him in.") === "Bring him in.");
 check("a parenthetical direction goes", king("(leaning back, coldly) Bring him in.") === "Bring him in.");
+check(
+  "an unclosed director note never reaches speech",
+  king("Use the lobby instead. (Director's note: keep this as one continuous thought") === "Use the lobby instead.",
+);
 check("a turn that is nothing but a direction is not aired", king("*The King reads the proclamation aloud.*") === "");
 check("emphasis on one word still survives", king("That is *really* the issue.") === "That is really the issue.");
 check("emphasis on a pronoun survives", king("*He* took the granaries, not I.") === "He took the granaries, not I.");
@@ -477,6 +535,34 @@ const priorTurns = [
 check("spots a repeated filler opening", repeatsOpening("That's a fair point, and also...", priorTurns) !== null);
 check("allows a fresh opening", repeatsOpening("Three years ago I worked in one.", priorTurns) === null);
 check("allows filler used only once", repeatsOpening("Absolutely, and here is why.", priorTurns) === null);
+const patternedTurns = [
+  ...priorTurns,
+  { index: 1, hostId: "b" as const, speaker: "B", text: "I think there is room for a compromise." },
+];
+check(
+  "spots an ordinary repeated three-word opening",
+  repeatsOpening("I think there should be limits.", patternedTurns) === "i think there",
+);
+check("allows a different three-word opening", repeatsOpening("A waiter sees the cost first.", patternedTurns) === null);
+check(
+  "rotating to a different generic agreement is still caught later",
+  repeatsOpening("That's exactly why the policy matters.", patternedTurns) === "that's exactly",
+);
+check("catches a host narrating the other host", reportsOtherInsteadOfReplying("Dee makes a great point about manners.", "Dee"));
+check("allows a direct reply addressed by name", !reportsOtherInsteadOfReplying("Dee, that misses the cost to servers.", "Dee"));
+const openingRecord = { title: "Reckoning", artist: "Ju Ju" };
+check(
+  "opening record title cannot become discussion material",
+  reusesOpeningRecord("Reckoning would lose customers if it banned phones.", openingRecord, "phone-free dining") === "Reckoning",
+);
+check(
+  "opening record artist cannot become discussion material",
+  reusesOpeningRecord("Ju Ju should offer coloring sheets instead.", openingRecord, "phone-free dining") === "Ju Ju",
+);
+check(
+  "a song named by the actual topic remains discussable",
+  reusesOpeningRecord("Reckoning changes key in the bridge.", openingRecord, "the song Reckoning") === null,
+);
 
 check("recentOpenings summarises the last turns", recentOpenings(priorTurns)[0].startsWith("That's a fair"));
 
@@ -1617,6 +1703,27 @@ try {
   const restarted = await runConversation(config, "A fresh radio show", null, {});
   check("new show runs after cancellation", restarted.turns.length === 4, String(restarted.turns.length));
   check("restarted show leaves no model requests queued", queueStats().pending === 0 && queueStats().inFlight === 0);
+
+  let resumedStarts = 0;
+  const resumed = await runConversation(
+    config,
+    "A resumed radio show",
+    null,
+    { onTurnStart: () => { resumedStarts++; } },
+    undefined,
+    [],
+    undefined,
+    [],
+    null,
+    "",
+    [
+      { index: 0, hostId: "a", speaker: config.hosts[0].name, text: "The first completed point stays in the resumed conversation." },
+      { index: 1, hostId: "b", speaker: config.hosts[1].name, text: "The second completed point also survives the interruption." },
+    ],
+  );
+  check("resumed show preserves completed lines", resumed.turns[0]?.text.includes("first completed") && resumed.turns[1]?.text.includes("second completed"));
+  check("resumed show generates only missing host turns", resumedStarts === 2, String(resumedStarts));
+  check("resumed show reaches the configured length", resumed.turns.length === 4, String(resumed.turns.length));
 } finally {
   restartController.abort();
   globalThis.fetch = realFetch;
