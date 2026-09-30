@@ -15,6 +15,12 @@ import type {
   ShowDraft,
   ShowFiles,
   StorageSummary,
+  StationStatus,
+  AutomationSettings,
+  AutomationStatus,
+  BackupSummary,
+  PlayoutItem,
+  ScheduleSlot,
   Voice,
 } from "../types";
 
@@ -53,6 +59,51 @@ export const api = {
 
   checkTts: (config: Config) =>
     json<ProbeResult<Voice>>("/api/check/tts", { method: "POST", body: JSON.stringify(config) }),
+
+  stationStatus: (config: Config) =>
+    json<StationStatus>("/api/station/status", { method: "POST", body: JSON.stringify({ config }) }),
+
+  automation: () => json<AutomationStatus>("/api/automation"),
+
+  saveAutomation: (settings: Partial<AutomationSettings>) =>
+    json<AutomationStatus>("/api/automation", { method: "PUT", body: JSON.stringify(settings) }),
+
+  saveScheduleSlot: (slot: Partial<ScheduleSlot>) =>
+    json<{ slot: ScheduleSlot; status: AutomationStatus }>("/api/automation/slots", {
+      method: "POST",
+      body: JSON.stringify(slot),
+    }),
+
+  deleteScheduleSlot: (id: string) =>
+    json<AutomationStatus>(`/api/automation/slots/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  enqueueShow: (id: string) =>
+    json<AutomationStatus>(`/api/playout/queue/${encodeURIComponent(id)}`, { method: "POST" }),
+
+  removeQueuedShow: (id: string) =>
+    json<AutomationStatus>(`/api/playout/queue/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  clearPlayoutQueue: () => json<AutomationStatus>("/api/playout/queue", { method: "DELETE" }),
+
+  nextPlayout: () => json<{ item: PlayoutItem | null }>("/api/playout/next", { method: "POST" }),
+
+  completePlayout: () => json<AutomationStatus>("/api/playout/complete", { method: "POST" }),
+
+  listBackups: () => json<{ backups: BackupSummary[] }>("/api/backups"),
+
+  createBackup: (kind: "state" | "full") =>
+    json<{ backup: BackupSummary; backups: BackupSummary[] }>("/api/backups", {
+      method: "POST",
+      body: JSON.stringify({ kind }),
+    }),
+
+  restoreBackup: (id: string) =>
+    json<{ backup: BackupSummary; restartRequired: boolean }>(`/api/backups/${encodeURIComponent(id)}/restore`, {
+      method: "POST",
+      body: JSON.stringify({ confirm: id }),
+    }),
+
+  revealBackups: () => json<{ ok: true; path: string }>("/api/backups/reveal", { method: "POST" }),
 
   listShows: () => json<Show[]>("/api/shows"),
 

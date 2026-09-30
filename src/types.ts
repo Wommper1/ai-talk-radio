@@ -1,4 +1,12 @@
 export type LlmProvider = "lmstudio" | "ollama" | "openai-compatible" | "gemini";
+export type {
+  AutomationSettings,
+  AutomationStatus,
+  BackupSummary,
+  PlayoutItem,
+  ScheduleSlot,
+  StationMonitorEvent,
+} from "../shared/station-automation";
 export type TtsEngine = "sapi" | "piper" | "edge" | "none";
 export type VoiceTone = "studio" | "phone" | "room" | "throne" | "raw";
 export type ShowStyle = "debate" | "interview" | "roundtable" | "banter" | "explainer" | "coldopen" | "deepdive";
@@ -182,6 +190,14 @@ export interface Show {
   transcript: TranscriptLine[];
   models: string[];
   generationVersion?: number;
+  audioAnalysis?: {
+    targetLufs: number;
+    integratedLufs: number | null;
+    truePeakDbtp: number | null;
+    samplePeakDbfs: number | null;
+    gainAppliedDb: number;
+    streamingReady: boolean;
+  };
   audioUrl?: string;
   coverUrl?: string;
 }
@@ -195,6 +211,7 @@ export interface ShowDraft {
   createdAt: string;
   updatedAt: string;
   turns: LiveTurn[];
+  config?: Config;
 }
 
 export type DjRating = "keeper" | "reject";
@@ -246,7 +263,40 @@ export interface StorageSummary {
   showCount: number;
   fileCount: number;
   scratchBytes: number;
+  orphaned: Array<{ id: string; bytes: number }>;
   shows: Array<{ id: string; title: string; createdAt: string; bytes: number; hasAudio: boolean }>;
+}
+
+export interface StationCheck {
+  id: string;
+  label: string;
+  status: "pass" | "warning" | "blocker";
+  detail: string;
+}
+
+export interface StationStatus {
+  generatedAt: string;
+  ready: boolean;
+  checks: StationCheck[];
+  model: { ok: boolean; selected: string; available: string[]; error?: string };
+  speech: { ok: boolean; engine: TtsEngine; voices: number; error?: string };
+  storage: StorageSummary & { freeBytes: number };
+  commercials: {
+    total: number;
+    rotation: number;
+    requiredForShow: number;
+    issues: number;
+    auditOk: boolean;
+  };
+  recentShows: Array<{
+    id: string;
+    title: string;
+    createdAt: string;
+    duration: number;
+    integratedLufs: number | null;
+    truePeakDbtp: number | null;
+    streamingReady: boolean | null;
+  }>;
 }
 
 export interface CallerConfig {
@@ -271,6 +321,8 @@ export interface MemoryStats {
   shows: number;
   passages: number;
   path: string;
+  eligibleShows: number;
+  excludedLegacyShows: number;
 }
 
 export interface ProducerBrief {

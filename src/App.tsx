@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Radio, Library as LibraryIcon, SlidersHorizontal, Cpu, HardDrive, Crown, Megaphone } from "lucide-react";
+import { Radio, Library as LibraryIcon, SlidersHorizontal, Cpu, HardDrive, Crown, Megaphone, Gauge } from "lucide-react";
 import type { Config, ControlState, LiveTurn, Options, PlannedBreak, ProducerBrief, RunOrderEntry, Show, ShowDraft, Stage, TimingEntry } from "./types";
 import { api, generateStream } from "./lib/api";
 import { Studio } from "./components/Studio";
@@ -9,9 +9,10 @@ import { Player } from "./components/Player";
 import { Settings } from "./components/Settings";
 import { Files } from "./components/Files";
 import { Realm } from "./components/Realm";
+import { Operations } from "./components/Operations";
 import { Callout, StatusDot } from "./components/ui";
 
-type Tab = "studio" | "realm" | "commercials" | "library" | "files" | "settings";
+type Tab = "studio" | "realm" | "commercials" | "operations" | "library" | "files" | "settings";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("studio");
@@ -22,6 +23,7 @@ export default function App() {
   const [drafts, setDrafts] = useState<ShowDraft[]>([]);
   const [openShow, setOpenShow] = useState<Show | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [modelState, setModelState] = useState<"unknown" | "busy" | "ok" | "bad">("unknown");
 
   // Generation state
   const [running, setRunning] = useState(false);
@@ -123,6 +125,32 @@ export default function App() {
       }
     }, 25);
   }, []);
+
+  // The masthead is an operational light, not merely a check that a model id
+  // was typed. Probe quietly at boot and once a minute so a stopped LM Studio
+  // server is visible before the DJ tries to open a microphone.
+  useEffect(() => {
+    if (!config?.llm.model) {
+      setModelState("unknown");
+      return;
+    }
+    let cancelled = false;
+    const check = async () => {
+      if (!cancelled && !runningRef.current) setModelState("busy");
+      try {
+        const result = await api.checkLlm(config);
+        if (!cancelled) setModelState(result.ok ? "ok" : "bad");
+      } catch {
+        if (!cancelled) setModelState("bad");
+      }
+    };
+    void check();
+    const timer = window.setInterval(check, 60000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [config?.llm.provider, config?.llm.baseUrl, config?.llm.model]);
 
   const stopBed = useCallback(() => {
     if (bedRampRef.current !== null) {
@@ -288,7 +316,7 @@ export default function App() {
   /* ── Generation ────────────────────────────────────────────── */
 
   const generate = useCallback(
-    async (topic: string, sources: string[], sourceText: string) => {
+    async (topic: string, sources: string[], sourceText: string, resumeDraftId?: string) => {
       if (!config) return;
 
       const controller = new AbortController();
@@ -324,8 +352,21 @@ export default function App() {
       let finished = false;
 
       try {
+        setStage("producer");
+        setLogs(["Running the ready-for-air gate…"]);
+        const station = await api.stationStatus(config);
+        const blockers = station.checks.filter((check) => check.status === "blocker");
+        if (blockers.length > 0) {
+          throw new Error(`Ready-for-air blocked: ${blockers.map((check) => `${check.label} — ${check.detail}`).join(" ")}`);
+        }
+        const warnings = station.checks.filter((check) => check.status === "warning");
+        setLogs([
+          "Ready-for-air gate passed.",
+          ...warnings.map((check) => `Recommendation: ${check.label} — ${check.detail}`),
+        ]);
+
         const stream = generateStream(
-          { topic, sources, sourceText, config, jobId: jobIdRef.current },
+          { topic, sources, sourceText, config, jobId: jobIdRef.current, resumeDraftId },
           controller.signal,
         );
 
@@ -619,6 +660,7 @@ export default function App() {
     { id: "studio", label: "Studio", icon: Radio },
     { id: "realm", label: "Realm", icon: Crown },
     { id: "commercials", label: "Commercials", icon: Megaphone },
+    { id: "operations", label: "Operations", icon: Gauge },
     { id: "library", label: "Library", icon: LibraryIcon },
     { id: "files", label: "Files", icon: HardDrive },
     { id: "settings", label: "Settings", icon: SlidersHorizontal },
@@ -665,7 +707,7 @@ export default function App() {
           </nav>
 
           <div className="hidden items-center gap-2 border-l border-[var(--color-line)] pl-4 md:flex">
-            <StatusDot state={running ? "busy" : config.llm.model ? "ok" : "unknown"} />
+            <StatusDot state={running ? "busy" : modelState} />
             <span className="max-w-[190px] truncate font-mono text-[11px] text-[var(--color-mute)]">
               {config.llm.model || "no model selected"}
             </span>
@@ -709,12 +751,12 @@ export default function App() {
             songItem={songItem}
             drafts={drafts}
             onRecoverDraft={async (id) => {
-              const recovered = await api.recoverDraft(id);
-              setDrafts((items) => items.filter((draft) => draft.id !== id));
-              await refreshShows();
-              setOpenShow(recovered);
+              const draft = drafts.find((item) => item.id === id);
+              if (!draft) return;
+              await generate(draft.topic, [], "", id);
             }}
             onDeleteDraft={async (id) => {
+              if (!window.confirm("Discard this interrupted broadcast? Its completed lines cannot be recovered afterward.")) return;
               await api.deleteDraft(id);
               setDrafts((items) => items.filter((draft) => draft.id !== id));
             }}
@@ -734,6 +776,8 @@ export default function App() {
           />
         ) : tab === "commercials" ? (
           <Commercials />
+        ) : tab === "operations" ? (
+          <Operations config={config} />
         ) : tab === "library" ? (
           <Library shows={shows} onOpen={setOpenShow} onDelete={remove} onNew={() => setTab("studio")} />
         ) : tab === "files" ? (
@@ -756,7 +800,7 @@ export default function App() {
       <footer className="border-t border-[var(--color-line)] px-5 py-4">
         <p className="mx-auto flex max-w-7xl items-center gap-2 font-mono text-[11px] text-[var(--color-mute)]">
           <Cpu size={12} />
-          Runs entirely on this machine — {config.llm.provider} · {config.tts.engine === "none" ? "no speech" : config.tts.engine}
+          {config.tts.engine === "edge" ? "Local production with online Edge voices" : "Runs entirely on this machine"} — {config.llm.provider} · {config.tts.engine === "none" ? "no speech" : config.tts.engine}
         </p>
       </footer>
     </div>

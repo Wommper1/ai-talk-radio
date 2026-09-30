@@ -107,12 +107,24 @@ export function Files({ onOpenShow }: Props) {
                 <Button
                   size="sm"
                   disabled={busy}
-                  onClick={() => void act("Cleared working files", () => api.clearScratch())}
+                  onClick={() => {
+                    if (window.confirm("Clear live clips, previews, and test renders? Finished shows are kept.")) {
+                      void act("Cleared working files", () => api.clearScratch());
+                    }
+                  }}
                 >
                   <Trash2 size={13} />
                   Clear
                 </Button>
               </div>
+            </Callout>
+          </div>
+        )}
+
+        {summary.orphaned.length > 0 && (
+          <div className="mt-4">
+            <Callout tone="info" title={`${summary.orphaned.length} incomplete show folder${summary.orphaned.length === 1 ? "" : "s"} preserved`}>
+              {summary.orphaned.map((item) => `${item.id} (${formatBytes(item.bytes)})`).join(", ")}. Their show.json metadata is missing or unreadable, so they are not in the library. The app will not delete them automatically.
             </Callout>
           </div>
         )}
@@ -171,7 +183,11 @@ export function Files({ onOpenShow }: Props) {
                         variant="ghost"
                         title="Delete the per-turn clips, keep the finished show"
                         disabled={busy}
-                        onClick={() => void act("Pruned clips", () => api.pruneShow(show.id))}
+                        onClick={() => {
+                          if (window.confirm(`Delete the rebuildable per-turn clips for “${show.title}”? The finished show stays.`)) {
+                            void act("Pruned clips", () => api.pruneShow(show.id));
+                          }
+                        }}
                       >
                         <Scissors size={13} />
                       </Button>

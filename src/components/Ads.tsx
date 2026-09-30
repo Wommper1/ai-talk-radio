@@ -544,6 +544,7 @@ function AdShelf({ reusePercent }: { reusePercent: number }) {
   };
 
   const drop = async (id?: string) => {
+    if (!window.confirm(id ? "Throw this recorded commercial away?" : "Clear every recorded commercial from the legacy shelf?")) return;
     setBusy(true);
     try {
       const r = await api.clearAdLibrary(id);
@@ -556,6 +557,7 @@ function AdShelf({ reusePercent }: { reusePercent: number }) {
   };
 
   const totalSeconds = spots.reduce((n, s) => n + s.seconds, 0);
+  const retired = spots.filter((spot) => spot.formatVersion !== 3).length;
 
   return (
     <Panel
@@ -579,6 +581,13 @@ function AdShelf({ reusePercent }: { reusePercent: number }) {
         </Callout>
       ) : (
         <>
+          {retired > 0 && (
+            <div className="mb-3">
+              <Callout tone="info" title={`${retired} legacy spot${retired === 1 ? " is" : "s are"} off rotation`}>
+                They remain here for audition or manual deletion, but the station will not schedule old-format copy automatically. Current commercials come from the bucket.
+              </Callout>
+            </div>
+          )}
           <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.15em] text-[var(--color-mute)]">
             {spots.length} spot{spots.length === 1 ? "" : "s"} · {Math.round(totalSeconds)}s recorded
           </p>

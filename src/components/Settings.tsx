@@ -23,7 +23,10 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
   const [llmError, setLlmError] = useState<{ error?: string; hint?: string } | null>(null);
   const [ttsError, setTtsError] = useState<{ error?: string; hint?: string } | null>(null);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [previewing, setPreviewing] = useState<number | null>(null);
+  const [castingPreview, setCastingPreview] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
 
   const [memStats, setMemStats] = useState<MemoryStats | null>(null);
@@ -67,7 +70,13 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
 
   const update = useCallback(
     <K extends keyof Config>(key: K, value: Partial<Config[K]>) => {
-      onChange({ ...config, [key]: { ...config[key], ...value } } as Config);
+      onChange({
+        ...config,
+        [key]: { ...config[key], ...value },
+        show: key === "memory" || key === "imaging"
+          ? { ...config.show, performanceProfile: "custom" }
+          : config.show,
+      } as Config);
     },
     [config, onChange],
   );
@@ -125,21 +134,39 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
   }, []);
 
   const save = async () => {
-    await api.saveConfig(config);
-    setSaved(true);
-    onSaved();
-    setTimeout(() => setSaved(false), 1800);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await api.saveConfig(config);
+      setSaved(true);
+      onSaved();
+      setTimeout(() => setSaved(false), 1800);
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const reset = async () => {
-    const { config: fresh } = await api.resetConfig();
-    onChange(fresh);
-    setModels([]);
-    setVoices([]);
-    setLlmState("unknown");
-    setTtsState("unknown");
-    setLlmError(null);
-    setTtsError(null);
+    if (!window.confirm("Reset every station setting to the factory defaults? This saves immediately.")) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const { config: fresh } = await api.resetConfig();
+      onChange(fresh);
+      setModels([]);
+      setVoices([]);
+      setLlmState("unknown");
+      setTtsState("unknown");
+      setLlmError(null);
+      setTtsError(null);
+      onSaved();
+    } catch (err) {
+      setSaveError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const preview = async (index: 0 | 1) => {
@@ -157,6 +184,33 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
       setPreviewError((err as Error).message);
     } finally {
       setPreviewing(null);
+    }
+  };
+
+  const previewCandidate = async (index: 0 | 1, voice: string) => {
+    const key = `${index}:${voice}`;
+    setCastingPreview(key);
+    setPreviewError(null);
+    try {
+      const hosts = [...config.hosts] as [HostConfig, HostConfig];
+      hosts[index] = {
+        ...hosts[index],
+        voices: { ...hosts[index].voices, edge: voice },
+      };
+      const auditionConfig = { ...config, tts: { ...config.tts, engine: "edge" as const }, hosts };
+      const script =
+        `You're listening to ${config.show.station}. The room is quiet, the microphones are open, ` +
+        "and tonight we're getting past the easy answer to find the part that actually matters.";
+      const url = await api.previewVoice(auditionConfig, index, script);
+      if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = url;
+      if (!audioRef.current) audioRef.current = new Audio();
+      audioRef.current.src = url;
+      await audioRef.current.play();
+    } catch (err) {
+      setPreviewError((err as Error).message);
+    } finally {
+      setCastingPreview(null);
     }
   };
 
@@ -316,7 +370,7 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
             value={config.llm.maxTokens}
             min={64}
             max={2048}
-            step={32}
+            step={16}
             onChange={(maxTokens) => update("llm", { maxTokens })}
             hint="A hard ceiling. Turn length is really set per host below."
           />
@@ -423,6 +477,7 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
             checked={config.imaging.useIdent}
             onChange={(useIdent) => update("imaging", { useIdent })}
           />
+
           <Toggle
             label="Transitions between segments"
             hint="A sweep as the show moves from one beat to the next."
@@ -505,6 +560,12 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
             checked={config.memory.crossShow}
             onChange={(crossShow) => update("memory", { crossShow })}
           />
+
+          {memStats && memStats.excludedLegacyShows > 0 && (
+            <Callout tone="info" title={`${memStats.excludedLegacyShows} older show${memStats.excludedLegacyShows === 1 ? " is" : "s are"} intentionally excluded`}>
+              Only shows made by the current dialogue pipeline teach the DJs. Older episodes stay playable in the library but cannot leak retired host names or prompts into new broadcasts.
+            </Callout>
+          )}
 
           {config.memory.crossShow && (
             <>
@@ -724,6 +785,73 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
         </Panel>
       )}
 
+      {/* ── Matched Edge voice casting ───────────────────────── */}
+      <Panel
+        title="Voice casting"
+        subtitle="Matched A/B auditions: every candidate reads the same line through the real studio mic chain."
+      >
+        {config.tts.engine !== "edge" ? (
+          <Callout tone="info" title="Switch Speech to Edge TTS to use the casting desk">
+            The permanent choice is remembered separately for Edge, so auditioning will not replace your Piper or Windows voices.
+          </Callout>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {config.hosts.map((host, index) => {
+              const candidates = index === 0
+                ? [
+                    { voice: "en-US-AndrewNeural", label: "Andrew", note: "warm, confident lead" },
+                    { voice: "en-US-BrianNeural", label: "Brian", note: "deeper, measured lead" },
+                  ]
+                : [
+                    { voice: "en-US-EmmaNeural", label: "Emma", note: "clear, conversational counterpoint" },
+                    { voice: "en-US-AvaNeural", label: "Ava", note: "bright, energetic counterpoint" },
+                  ];
+              return (
+                <div key={host.id} className="rounded-lg border border-[var(--color-line)] bg-[var(--color-panel-2)] p-4">
+                  <div className="mb-3">
+                    <div className="text-sm font-semibold text-white">{host.name}</div>
+                    <div className="text-xs text-[var(--color-mute)]">Current: {host.voices.edge || "default"}</div>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {candidates.map((candidate) => {
+                      const selected = host.voices.edge === candidate.voice;
+                      const busy = castingPreview === `${index}:${candidate.voice}`;
+                      return (
+                        <div
+                          key={candidate.voice}
+                          className={`rounded-md border p-3 ${selected ? "border-[var(--color-amber)] bg-[var(--color-amber)]/10" : "border-[var(--color-line)]"}`}
+                        >
+                          <div className="text-sm font-semibold text-[#e8e8ee]">{candidate.label}</div>
+                          <div className="mb-3 mt-1 text-[11px] text-[var(--color-mute)]">{candidate.note}</div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() => void previewCandidate(index as 0 | 1, candidate.voice)}
+                              disabled={castingPreview !== null}
+                            >
+                              {busy ? <RefreshCw size={12} className="animate-spin" /> : <Play size={12} />}
+                              Listen
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={selected ? "primary" : "ghost"}
+                              onClick={() => updateHost(index as 0 | 1, { voices: { ...host.voices, edge: candidate.voice } })}
+                            >
+                              {selected ? <Check size={12} /> : null}
+                              {selected ? "Selected" : "Use"}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Panel>
+
       {/* ── Hosts ─────────────────────────────────────────────── */}
       <div className="grid gap-5 lg:grid-cols-2">
         {config.hosts.map((host, i) => (
@@ -745,19 +873,20 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
       </div>
 
       {previewError && <Callout tone="error">{previewError}</Callout>}
+      {saveError && <Callout tone="error" title="Settings were not saved">{saveError}</Callout>}
 
       {/* ── Save bar ──────────────────────────────────────────── */}
       <div className="sticky bottom-0 -mx-5 border-t border-[var(--color-line)] bg-[var(--color-ink)]/95 px-5 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="font-mono text-[11px] text-[var(--color-mute)]">{configPath}</p>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => void reset()}>
+            <Button variant="ghost" size="sm" onClick={() => void reset()} disabled={saving}>
               <RotateCcw size={13} />
               Reset to defaults
             </Button>
-            <Button variant="primary" onClick={() => void save()}>
-              {saved ? <Check size={15} /> : <Save size={15} />}
-              {saved ? "Saved" : "Save settings"}
+            <Button variant="primary" onClick={() => void save()} disabled={saving}>
+              {saved ? <Check size={15} /> : saving ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} />}
+              {saved ? "Saved" : saving ? "Saving" : "Save settings"}
             </Button>
           </div>
         </div>

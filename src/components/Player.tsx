@@ -96,6 +96,16 @@ export function Player({ show, onBack, onDelete }: Props) {
             <Meta label="Length" value={formatTime(show.duration)} />
             <Meta label="Format" value={show.style} />
             <Meta label="Hosts" value={show.hosts.map((h) => h.name).join(" · ")} />
+            {show.audioAnalysis?.integratedLufs !== null && show.audioAnalysis?.integratedLufs !== undefined && (
+              <Meta
+                label="Loudness"
+                value={`${show.audioAnalysis.integratedLufs.toFixed(1)} LUFS-I · ${show.audioAnalysis.truePeakDbtp?.toFixed(1) ?? "—"} dBTP`}
+                mono
+              />
+            )}
+            {show.audioAnalysis && (
+              <Meta label="Master" value={show.audioAnalysis.streamingReady ? "Streaming ready" : "Review level"} />
+            )}
             {show.models.length > 0 && <Meta label="Model" value={show.models.join(" · ")} mono />}
           </dl>
 

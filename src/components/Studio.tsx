@@ -245,10 +245,19 @@ export function Studio(props: Props) {
 
   // Dialogue, gaps, the breaks, the opener and the record — what actually goes out.
   const runtime = runtimeLabel(estimateSeconds(config));
+  const overMixLimit = estimateSeconds(config) > 30 * 60;
   const modelSamples = timings.filter((entry) => entry.phase === "Model" && !entry.skipped);
   const averageModelMs = modelSamples.length
     ? modelSamples.reduce((sum, entry) => sum + entry.milliseconds + (entry.queueMs ?? 0), 0) / modelSamples.length
     : 0;
+  const turnSamples = timings.filter((entry) => entry.phase === "Turn" && !entry.skipped);
+  const averageTurnMs = turnSamples.length
+    ? turnSamples.reduce((sum, entry) => sum + entry.milliseconds, 0) / turnSamples.length
+    : averageModelMs;
+  const completedHostTurns = turns.filter((turn) => turn.hostId === "a" || turn.hostId === "b").length;
+  const etaSeconds = running && stage === "conversation" && averageTurnMs > 0
+    ? Math.max(0, Math.round((config.show.turns - completedHostTurns) * averageTurnMs / 1000))
+    : null;
   const nextSpeaker = control && runOrder[control.current + 1]?.speaker;
 
   return (
@@ -264,8 +273,8 @@ export function Studio(props: Props) {
                     <div className="truncate text-sm font-medium text-white">{draft.topic}</div>
                     <div className="text-xs text-[var(--color-mute)]">{draft.turns.length} completed turns</div>
                   </div>
-                  <Button size="sm" onClick={() => void onRecoverDraft(draft.id)} title="Recover to library">
-                    <RotateCcw size={13} /> Recover
+                  <Button size="sm" onClick={() => void onRecoverDraft(draft.id)} title="Continue from the last completed line">
+                    <RotateCcw size={13} /> Resume
                   </Button>
                   <Button size="sm" variant="ghost" onClick={() => void onDeleteDraft(draft.id)} title="Discard draft">
                     <Trash2 size={13} />
@@ -408,7 +417,7 @@ export function Studio(props: Props) {
 
             <Field
               label="Length"
-              hint={`About ${runtime} on air, breaks and the record included. The slider stops at eighty; type any number up to six hundred.`}
+              hint={`About ${runtime} on air, breaks and the record included. Finished episodes are capped at 30 minutes so the final studio mix stays reliable.`}
             >
               <div className="flex items-center gap-3">
                 <input
@@ -425,7 +434,7 @@ export function Studio(props: Props) {
                 <Input
                   type="number"
                   min={2}
-                  max={600}
+                  max={160}
                   step={2}
                   value={config.show.turns}
                   aria-label="Turns"
@@ -434,12 +443,18 @@ export function Studio(props: Props) {
                   onChange={(e) => {
                     const n = Number(e.target.value);
                     if (Number.isFinite(n) && n > 0) {
-                      update("show", { turns: Math.max(2, Math.min(600, Math.round(n))) });
+                      update("show", { turns: Math.max(2, Math.min(160, Math.round(n))) });
                     }
                   }}
                 />
               </div>
             </Field>
+
+            {overMixLimit && (
+              <Callout tone="info" title="Running order is too long">
+                Shorten the show or reduce the commercial load. The station will not start a show that cannot be safely mixed.
+              </Callout>
+            )}
 
             {running ? (
               <Button type="button" variant="danger" className="w-full" onClick={onCancel}>
@@ -447,7 +462,7 @@ export function Studio(props: Props) {
                 Stop
               </Button>
             ) : (
-              <Button type="submit" variant="primary" className="w-full" disabled={!topic.trim()}>
+              <Button type="submit" variant="primary" className="w-full" disabled={!topic.trim() || overMixLimit}>
                 <Radio size={16} />
                 Start the show
               </Button>
@@ -540,7 +555,7 @@ export function Studio(props: Props) {
               label="Find the angle first"
               hint="A producer pass reads the material and pulls out the hook, the ideas worth covering and everyday comparisons for the hard parts — before either host opens their mouth."
               checked={config.show.useProducer}
-              onChange={(useProducer) => update("show", { useProducer })}
+              onChange={(useProducer) => update("show", { useProducer, performanceProfile: "custom" })}
             />
 
             <Toggle
@@ -554,7 +569,7 @@ export function Studio(props: Props) {
               label="Plan the segment first"
               hint="Asks the model for a beat sheet before writing dialogue. Keeps long shows on track."
               checked={config.show.useOutline}
-              onChange={(useOutline) => update("show", { useOutline })}
+              onChange={(useOutline) => update("show", { useOutline, performanceProfile: "custom" })}
             />
 
             <Toggle
@@ -651,6 +666,11 @@ export function Studio(props: Props) {
               {(running || elapsed > 0) && (
                 <span className="font-mono text-xs tabular-nums text-[var(--color-mute)]">
                   {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, "0")}
+                </span>
+              )}
+              {etaSeconds !== null && (
+                <span className="font-mono text-[11px] tabular-nums text-[var(--color-amber)]" title="Estimated from this show's completed turns">
+                  ≈{Math.floor(etaSeconds / 60)}:{String(etaSeconds % 60).padStart(2, "0")} left
                 </span>
               )}
             </div>
