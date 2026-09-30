@@ -20,6 +20,7 @@ import {
   echoesPrevious,
   leansOnSimile,
   recentOpenings,
+  usedOpenings,
   repeatsOpening,
   overusedImages,
   repeatsImage,
@@ -1507,6 +1508,13 @@ export async function runConversation(
     if (openings.length > 0) {
       instruction += ` Do not begin your line the way these did: ${openings.map((o) => `"${o}"`).join(", ")}.`;
     }
+    // Later in a long show the recent list has forgotten openings from earlier
+    // turns, which is where the repeats come from. Name the rest as well.
+    const recentKeys = new Set(openings.map((o) => o.toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter(Boolean).slice(0, 3).join(" ")));
+    const earlier = usedOpenings(turns).filter((o) => !recentKeys.has(o));
+    if (earlier.length > 0) {
+      instruction += ` Also avoid opening with: ${earlier.map((o) => `"${o}"`).join(", ")}.`;
+    }
 
     // And away from the image it has already leaned on. A small model that
     // finds one funny detail will return to it every turn until told not to,
@@ -1952,7 +1960,9 @@ export async function runConversation(
         signal,
       });
       const retried = trimToWordBudget(cleanLine(retry, host.name, other.name), host.maxWords);
-      if (retried && !looksLikeToolCall(retry)) cleaned = retried;
+      // Take the retry only if it actually found a new way in; a retry that
+      // reopens the same way has fixed nothing and may have drifted.
+      if (retried && !looksLikeToolCall(retry) && !repeatsOpening(retried, turns)) cleaned = retried;
     }
 
     // The same guard, one level up from the opener: a line reaching for an

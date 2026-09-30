@@ -693,18 +693,40 @@ export function repeatsOpening(text: string, previous: Turn[]): string | null {
   // ordinary but very audible templates: "I think there's room...", "Marco,
   // I think...", "The real issue is...". Compare the first three spoken words
   // across the recent show, which is the same unit the transcript audit uses.
-  const key = (value: string): string =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9' ]/g, " ")
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 3)
-      .join(" ");
-
-  const fingerprint = key(text);
+  //
+  // The whole show is compared, not a recent window: the transcript audit
+  // counts a repeat however far apart the two lines are, and a long show
+  // repeats most often at exactly the distance a window forgets.
+  const fingerprint = openingKey(text);
   if (fingerprint.split(" ").length < 3) return null;
-  return previous.slice(-12).some((turn) => key(turn.text) === fingerprint) ? fingerprint : null;
+  return previous.some((turn) => openingKey(turn.text) === fingerprint) ? fingerprint : null;
+}
+
+/** The first three spoken words of a line: the unit the transcript audit compares. */
+function openingKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9' ]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" ");
+}
+
+/**
+ * Every three-word opening the show has already used, most recent first.
+ *
+ * {@link recentOpenings} only remembers the last few turns, so a long show
+ * happily returns to an opening it used twenty turns ago. This is the whole
+ * show's list, for telling the next speaker what is taken.
+ */
+export function usedOpenings(turns: Turn[], limit = 16): string[] {
+  const seen = new Set<string>();
+  for (let i = turns.length - 1; i >= 0 && seen.size < limit; i--) {
+    const key = openingKey(turns[i].text);
+    if (key.split(" ").length >= 3) seen.add(key);
+  }
+  return Array.from(seen);
 }
 
 /**

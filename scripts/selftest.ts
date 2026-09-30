@@ -104,6 +104,7 @@ import {
   repeatsImage,
   leansOnSimile,
   recentOpenings,
+  usedOpenings,
   memoryBlock,
   EMPTY_MEMORY,
 } from "../server/pipeline/showrunner.ts";
@@ -565,6 +566,22 @@ check(
 );
 
 check("recentOpenings summarises the last turns", recentOpenings(priorTurns)[0].startsWith("That's a fair"));
+
+// Long shows: an opening repeats at a distance the old twelve-turn window forgot.
+const longShow = Array.from({ length: 20 }, (_, i) => ({
+  index: i,
+  hostId: (i % 2 ? "b" : "a") as "a" | "b",
+  speaker: i % 2 ? "B" : "A",
+  text: i === 0 ? "Picture a waiter carrying four plates." : `Reason number ${i} is about the bill.`,
+}));
+check(
+  "an opening from twenty turns back is still caught",
+  repeatsOpening("Picture a waiter who dropped them all.", longShow) === "picture a waiter",
+);
+check("usedOpenings reaches back through the whole show", usedOpenings(longShow, 30).includes("picture a waiter"));
+check("usedOpenings lists each opening once", new Set(usedOpenings(longShow)).size === usedOpenings(longShow).length);
+check("usedOpenings is capped", usedOpenings(longShow, 5).length === 5);
+check("usedOpenings puts the newest first", usedOpenings(longShow)[0] === "reason number 19");
 
 // Memory rendering
 const mem = {
