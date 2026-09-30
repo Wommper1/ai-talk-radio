@@ -3,8 +3,9 @@
 Two AI hosts talk to each other, live, and the result is mixed into a radio show
 with voices, music and a timecoded transcript.
 
-Everything runs on your machine. Your model, your speech engine, your files.
-No account, no cloud storage, no daily limit.
+The language model, production pipeline, shows and station memory run on your
+machine. Piper speech is fully local; the higher-quality Edge neural voices use
+Microsoft's online speech service but still save every result only on this PC.
 
 ---
 
@@ -31,6 +32,19 @@ then check everything is wired up:
 ```bash
 npm run doctor
 ```
+
+For the most natural DJ voices, install the station's private Edge voice client
+once (it does not alter your system Python):
+
+```bash
+npm run setup-edge-tts
+npm run ttstest -- edge
+```
+
+The two WAVs in `output/ttstest/` use the same close-mic EQ, gentle broadcast
+compression and limiter as a live show. The bundled Piper voices remain the
+offline fallback. On a 6 GB GPU, keep speech on Edge or Piper so all VRAM stays
+available to the DJ model.
 
 Then run the app:
 
@@ -68,6 +82,25 @@ topic
 Timecodes come from the real length of each synthesised clip, not from a model's
 guess, so the transcript always lines up with playback.
 
+The performance profiles are operational presets rather than labels: **Fast
+Live** minimizes model calls, **Balanced** keeps memory and notes, and
+**Produced** enables the planning chain. Editing a controlled switch changes
+the label to **Custom**, so the screen always describes what will really run.
+Finished episodes are preflighted against a 30-minute safe mix limit before the
+model starts. On the target 32 GB system, stereo, imaging and the selected music
+bed remain enabled for that entire duration.
+
+Before **Start Show** commits the station to a production, the ready-for-air
+gate checks LM Studio, every selected model, speech, disk headroom, the running
+order, commercial inventory, and saved-file health. The **Operations** tab
+shows the same checks and separates blockers from recommendations.
+
+If the app or server stops mid-show, every completed line is checkpointed.
+**Interrupted broadcasts → Resume** continues with those lines as conversation
+context rather than merely filing an incomplete transcript. Valid voice clips
+already rendered for those lines are reused, and a failed voice line is retried
+by itself rather than discarding the whole program.
+
 **You hear the show as it is written.** A line is spoken about two to three
 seconds after it appears, and the line currently playing is highlighted, so
 reading and listening stay together instead of watching text for minutes and
@@ -75,6 +108,10 @@ then getting a file. The same clips are reused for the final mix, so nothing is
 synthesised twice and the finished show is unchanged. Mute it with the speaker
 icon, or turn it off entirely under **Direction → Speak each line as it is
 written**.
+
+Every finished mix is mastered toward **-16 LUFS-I** with a **-1 dBTP** true-
+peak ceiling. The saved measurements appear in the player, so an operator can
+see whether a show is ready for streaming without guessing from a waveform.
 
 ---
 
@@ -143,10 +180,10 @@ npm run stingtest
 they are on, throws to the break, and another host welcomes the listener back
 afterwards — so the break is part of the running order, not a splice.
 
-The break is also the show's buffer. It is written before anyone goes on air
-and recorded in the background while the hosts are still talking, so playing
-one costs the listener nothing and hands the model close to a minute of head
-start. **Ad breaks make the show faster, not slower.**
+The commercial bucket is the show's buffer. Ready spots are grouped into full
+breaks first; if the bucket covers only part of tonight's log, the station uses
+those and writes only the missing breaks. Copy and rendering run behind the
+conversation, so a healthy bucket keeps the DJ model focused on the hosts.
 
 | Setting              | What it does                                                      |
 | -------------------- | ----------------------------------------------------------------- |

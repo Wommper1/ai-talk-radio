@@ -21,6 +21,9 @@ launcher/icon.ico
 memory/index.json
 memory/dj-feedback.json
 data/world_api_token.txt
+data/station-automation.json
+data/station-automation.lock
+backups/
 training/dj-lora/data/
 training/orion-lora/data/
 
