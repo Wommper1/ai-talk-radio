@@ -1,7 +1,8 @@
 # Station readiness — 6 GB VRAM / 32 GB RAM
 
 Reviewed and updated September 27, 2026 for the station machine (GTX 1660,
-6 GB VRAM, 32 GB system RAM) and LM Studio.
+6 GB VRAM, 32 GB system RAM) and LM Studio. The unattended-operation section
+and the October 6 operator-gate record were added on October 6, 2026.
 
 ## Ready for air
 
@@ -76,14 +77,91 @@ masters remain in their matching folders under `shows/`.
   human-approved keeper lines and a commercially suitable base-model license;
   there are not yet enough reviewed lines.
 
+## Unattended operation — implemented, not yet certified
+
+Scheduled production and automatic playout are **off by default**. Implementation
+and certification are recorded separately: the code below exists and its failure
+paths have run for real, but no scheduled show has ever finished.
+
+**Implemented** (`server/station/automation.ts`, `shared/station-automation.ts`,
+the Operations tab):
+
+- **Scheduled production.** Weekday/time slots. At a slot's local minute the
+  station runs the ready-for-air preflight, refuses real blockers, generates the
+  show, and queues it for playout. A slot runs once per local day.
+- **Retries.** A failed scheduled run is retried after `retryMinutes` (default
+  10), three attempts in all. Each new scheduled run gets a fresh attempt budget
+  (fixed October 6, 2026: before that, once a slot used up its attempts no later
+  day's failure was retried until a run happened to succeed).
+- **Persistent playout.** The queue, the current item, and the last 100 plays
+  survive a restart. With auto-fallback on and the queue empty, playout picks a
+  streaming-ready finished show, preferring shows not among the last 12 played.
+- **Health monitor.** Station readiness is probed every five minutes and only
+  changes are logged (last 250 events).
+- **Backups.** A daily state backup (config, data, memory, commercials, ads,
+  openers) runs after 03:00 local time; a full backup also takes shows and music.
+  Restore always takes a safety backup first. (Fixed October 6, 2026: the
+  "day" used to be the UTC date, so the daily backup fired around 8 PM local
+  time on this machine instead of after 03:00.)
+- **Single owner.** One server process holds the scheduler through
+  `data/station-automation.lock`.
+
+**Evidence so far** (from `data/station-automation.json`, September 27–28):
+
+- The scheduler fired the "24-turn station certification" slot, ran the
+  preflight, and failed because the DJ model was not loaded, then because LM
+  Studio could not be reached. It retried on schedule and stopped at the retry
+  limit, logging that fallback playout remains available.
+- One backup-and-restore round trip worked and created its safety backup first.
+- The health monitor logged real transitions: model not loaded, LM Studio
+  unreachable, and the commercial-rotation shortfall.
+- **No scheduled production has ever completed.** Playout and fallback have
+  never run: the queue and play history are empty.
+
+**Automated coverage.** `npm run selftest` covers slot timing, once-per-day
+firing, id safety, turn bounds, and the retry budget. It does **not** cover an
+end-to-end slot run, the playout queue and fallback, backup and restore, the
+health monitor, or the single-owner lock.
+
+**Known limits.**
+
+- A slot only fires if the server is running during its exact minute. If the app
+  or the PC is off or asleep then, that day's show is skipped; there is no
+  catch-up run.
+- Backups are written to `backups/` on the same drive. They are not an
+  off-machine copy.
+- Edge speech needs internet access, so an unattended show fails while offline.
+  Piper is the offline fallback.
+
+**Certification still open.**
+
+- [ ] A scheduled (not manually started) 24-turn Produced show completes
+  unattended with the intended model: every host turn voiced, four commercial
+  breaks, mastered, and queued for playout. The October 6 PC project audit
+  records an earlier attempt interrupted because the loaded Qwen 3.5 9B was too
+  slow for 6 GB of VRAM; restore the proven 8B Stheno model or choose another
+  that meets the latency target.
+- [ ] Playout plays a queued show, then falls back correctly with the intended
+  model unavailable.
+- [ ] Backup and restore are confirmed again on the final release state.
+- [ ] `dialogue-smoke` and `phase-smoke` are rerun with the intended model loaded.
+- [ ] Decide whether scheduled production is a launch requirement or stays an
+  optional feature. Until decided it is not counted as a launch blocker.
+
+**Operational note.** The saved slot "24-turn station certification" (Sundays,
+20:00) is still enabled and automation is switched on. If the station server is
+running on a Sunday evening, it will start a full 24-turn production by itself,
+using whichever model is loaded in LM Studio.
+
 ## Optional wish list (not launch blockers)
 
 - [x] Add a loudness meter and export target in LUFS for matching external
   playout systems.
 - [x] Add an A/B voice audition panel for Andrew, Brian, Emma, and Ava before
   changing the permanent cast.
-- [ ] Add scheduled unattended recording after the station has completed a
-  few supervised full-show burn-in runs.
+- [x] Add scheduled unattended recording after the station has completed a
+  few supervised full-show burn-in runs. Implemented September 27; **not yet
+  certified**, see "Unattended operation" above.
 - [ ] Add a second fully local premium neural voice engine when a model that
   fits beside the 8B DJ on 6 GB VRAM meets the station's quality bar.
 - [ ] Collect and label 500 keeper lines before revisiting DJ fine-tuning.
@@ -106,3 +184,20 @@ npm run phase-smoke
 
 The voice audition files are written to `output/ttstest/` and may be cleared
 from the Files screen without affecting finished shows.
+
+### Operator gate record — October 6, 2026 (offline portion)
+
+LM Studio was not running, so the model-dependent checks were deliberately not
+run.
+
+| Check | Result |
+| --- | --- |
+| `npm run doctor` | One problem: LM Studio not reachable. Node 24.19.0, config, 322 Edge voices, Marco/Dee casting and the show setup all pass. |
+| `npm run typecheck` | Passed. |
+| `npm run selftest` | 496 passed, 0 failed. |
+| `npm run ttstest -- edge` | Passed. Marco rendered 5.66 s of audio in 1.10 s; Dee 6.12 s in 1.13 s. |
+| `npm run dialogue-smoke` | Not run: needs a loaded model. |
+| `npm run phase-smoke` | Not run: needs LM Studio and the station server. |
+
+The gate is therefore **not** fully re-passed. Re-run the last two with the
+intended model loaded before calling this release state certified.
