@@ -119,12 +119,26 @@ the Operations tab):
   never run: the queue and play history are empty.
 
 **Automated coverage.** `npm run selftest` covers slot timing, once-per-day
-firing, id safety, turn bounds, and the retry budget. It does **not** cover an
-end-to-end slot run, the playout queue and fallback, backup and restore, the
-health monitor, or the single-owner lock.
+firing, id safety, turn bounds, and the retry budget. `npm run
+automation-selftest` (52 checks, added October 6) covers the playout queue and
+its persistence, fallback selection (streaming-ready and silent shows, recently
+played shows, a queued show whose files vanished), the history and event-log
+caps, schedule-slot management, settings clamping, backup contents and
+exclusions (the lock file, the backups folder itself, shows and music for state
+backups), and restore (the safety backup is taken first, saved settings are
+reloaded, and unsafe or tampered ids and manifests cannot write outside the
+station folder). It runs in a throwaway temporary folder, imports the modules
+only after changing into it, and refuses to run otherwise, so it cannot touch
+the real `shows/`, `data/` or `backups/`. Deliberately breaking three of those
+behaviours in the module made exactly the matching checks fail. Still **not**
+covered: an end-to-end slot run, the five-minute health monitor, and the
+single-owner lock; they need a running station server and a loaded model.
 
 **Known limits.**
 
+- Restore overlays the saved snapshot onto the station folder. It does not delete
+  files created after the backup, so a restore is not a rollback to an exact
+  earlier state. (A safety backup of the pre-restore state is always taken first.)
 - A slot only fires if the server is running during its exact minute. If the app
   or the PC is off or asleep then, that day's show is skipped; there is no
   catch-up run.
@@ -142,8 +156,10 @@ health monitor, or the single-owner lock.
   slow for 6 GB of VRAM; restore the proven 8B Stheno model or choose another
   that meets the latency target.
 - [ ] Playout plays a queued show, then falls back correctly with the intended
-  model unavailable.
-- [ ] Backup and restore are confirmed again on the final release state.
+  model unavailable. The queue and fallback rules are covered offline
+  (`automation-selftest`); what is open is seeing it happen in a live run.
+- [ ] Backup and restore are confirmed again on the final release state. The
+  logic is covered offline; this is a check on the real station files.
 - [ ] `dialogue-smoke` and `phase-smoke` are rerun with the intended model loaded.
 - [ ] Decide whether scheduled production is a launch requirement or stays an
   optional feature. Until decided it is not counted as a launch blocker.
@@ -177,6 +193,7 @@ Run these after changing Python, Node, the model, or audio settings:
 npm run doctor
 npm run typecheck
 npm run selftest
+npm run automation-selftest
 npm run ttstest -- edge
 npm run dialogue-smoke
 npm run phase-smoke
@@ -195,6 +212,7 @@ run.
 | `npm run doctor` | One problem: LM Studio not reachable. Node 24.19.0, config, 322 Edge voices, Marco/Dee casting and the show setup all pass. |
 | `npm run typecheck` | Passed. |
 | `npm run selftest` | 496 passed, 0 failed. |
+| `npm run automation-selftest` | 52 passed, 0 failed (added later the same day; run in a temporary sandbox). |
 | `npm run ttstest -- edge` | Passed. Marco rendered 5.66 s of audio in 1.10 s; Dee 6.12 s in 1.13 s. |
 | `npm run dialogue-smoke` | Not run: needs a loaded model. |
 | `npm run phase-smoke` | Not run: needs LM Studio and the station server. |
