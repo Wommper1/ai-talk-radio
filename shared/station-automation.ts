@@ -136,3 +136,24 @@ export function normalizeScheduleSlot(raw: Partial<ScheduleSlot>): ScheduleSlot 
     retryCount: Math.max(0, Math.min(3, Math.round(Number(raw.retryCount) || 0))),
   };
 }
+
+/** One scheduled run plus its automatic retries, three attempts in all. */
+export const MAX_SCHEDULE_ATTEMPTS = 3;
+
+/**
+ * Retry bookkeeping after a failed scheduled run. A fresh scheduled run starts a
+ * new attempt budget; only a retry continues the count, so one bad day does not
+ * disable automatic retries for every later day.
+ */
+export function nextRetryState(
+  previousCount: number | undefined,
+  isRetry: boolean,
+  retryMinutes: number,
+  now: Date,
+): { retryCount: number; retryAt?: string } {
+  const retryCount = Math.min(MAX_SCHEDULE_ATTEMPTS, (isRetry ? previousCount ?? 0 : 0) + 1);
+  return {
+    retryCount,
+    retryAt: retryCount < MAX_SCHEDULE_ATTEMPTS ? new Date(now.getTime() + retryMinutes * 60_000).toISOString() : undefined,
+  };
+}

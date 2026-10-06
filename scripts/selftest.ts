@@ -73,6 +73,7 @@ import { applyPerformanceProfile } from "../shared/performance-profiles.ts";
 import { missingModels } from "../shared/model-preflight.ts";
 import { LOW_MEMORY_MIX_SECONDS, MAX_MIX_SECONDS, mixPolicy } from "../shared/mix-policy.ts";
 import {
+  nextRetryState,
   normalizeScheduleSlot,
   safeAutomationId,
   scheduleSlotDue,
@@ -158,6 +159,12 @@ check("scheduled show runs only once per day", !scheduleSlotDue(scheduleSlot, sc
 check("station date keys use local calendar days", stationDateKey(scheduleNow) === "2026-09-27");
 check("backup and schedule ids reject traversal", safeAutomationId("backup-2026") && !safeAutomationId("../backup"));
 check("schedule turn counts are bounded", normalizeScheduleSlot({ turns: 500 }).turns === 60);
+
+const firstFailure = nextRetryState(0, false, 10, scheduleNow);
+check("a first failed run schedules a retry", firstFailure.retryCount === 1 && firstFailure.retryAt === new Date(scheduleNow.getTime() + 600_000).toISOString());
+check("a second failed attempt still schedules a retry", nextRetryState(firstFailure.retryCount, true, 10, scheduleNow).retryAt !== undefined);
+check("the third failed attempt stops retrying", nextRetryState(2, true, 10, scheduleNow).retryAt === undefined);
+check("a new day's failure retries even after an earlier day exhausted its attempts", nextRetryState(3, false, 10, scheduleNow).retryAt !== undefined);
 
 // Deterministic from seed
 const bedA = generateBed(2, "chill", 99);

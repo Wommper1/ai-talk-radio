@@ -6,10 +6,12 @@ import { listShows, readShow, type StoredShow } from "../pipeline/store.ts";
 import {
   AUTOMATION_FORMAT,
   DEFAULT_AUTOMATION_SETTINGS,
+  nextRetryState,
   normalizeScheduleSlot,
   safeAutomationId,
   scheduleSlotDue,
   slotRunKey,
+  stationDateKey,
   type AutomationSettings,
   type AutomationStatus,
   type BackupSummary,
@@ -465,11 +467,9 @@ async function runSlot(slotId: string, retry = false): Promise<void> {
   } catch (error) {
     const message = (error as Error).message || "Scheduled production failed.";
     slot.lastError = message;
-    const retries = Math.min(3, (slot.retryCount ?? 0) + 1);
-    slot.retryCount = retries;
-    slot.retryAt = retries < 3
-      ? new Date(Date.now() + state.settings.retryMinutes * 60_000).toISOString()
-      : undefined;
+    const next = nextRetryState(slot.retryCount, retry, state.settings.retryMinutes, new Date());
+    slot.retryCount = next.retryCount;
+    slot.retryAt = next.retryAt;
     saveState();
     recordStationEvent("error", "scheduler", `${slot.name} failed: ${message}${slot.retryAt ? ` Retrying at ${new Date(slot.retryAt).toLocaleTimeString()}.` : " Retry limit reached; fallback playout remains available."}`);
   } finally {
@@ -526,7 +526,7 @@ async function tick(): Promise<void> {
   }
 
   if (state.settings.dailyBackup) {
-    const today = now.toISOString().slice(0, 10);
+    const today = stationDateKey(now);
     if (state.lastDailyBackup !== today && now.getHours() >= 3) {
       try {
         createStationBackup("state");
