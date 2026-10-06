@@ -25,5 +25,9 @@ jobs:
       - name: Self-test
         run: npm run selftest
 
+      # Playout, fallback, backup and restore, run inside a temporary folder.
+      - name: Automation self-test
+        run: npm run automation-selftest
+
       - name: Build
         run: npm run build
