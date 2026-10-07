@@ -194,6 +194,7 @@ npm run doctor
 npm run typecheck
 npm run selftest
 npm run automation-selftest
+npm run unattended-status
 npm run ttstest -- edge
 npm run dialogue-smoke
 npm run phase-smoke
@@ -213,6 +214,7 @@ run.
 | `npm run typecheck` | Passed. |
 | `npm run selftest` | 496 passed, 0 failed. |
 | `npm run automation-selftest` | 52 passed, 0 failed (added later the same day; run in a temporary sandbox). |
+| `npm run unattended-status` | Added October 7. Read-only; reports the durable certification result without starting the server, model, audio, or network. Current state: `BLOCKED` because the last three-attempt run did not reach a finished show. |
 | `npm run ttstest -- edge` | Passed. Marco rendered 5.66 s of audio in 1.10 s; Dee 6.12 s in 1.13 s. |
 | `npm run dialogue-smoke` | Not run: needs a loaded model. |
 | `npm run phase-smoke` | Not run: needs LM Studio and the station server. |

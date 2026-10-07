@@ -12,6 +12,7 @@
     "doctor": "tsx scripts/doctor.ts",
     "selftest": "tsx scripts/selftest.ts",
     "automation-selftest": "tsx scripts/automation-selftest.ts",
+    "unattended-status": "tsx scripts/unattended-status.ts",
     "ttstest": "tsx scripts/ttstest.ts",
     "voice-audition": "tsx scripts/voice-audition.ts",
     "dialogue-smoke": "tsx scripts/dialogue-smoke.ts",
