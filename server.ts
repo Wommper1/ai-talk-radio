@@ -23,6 +23,7 @@ import {
   DEFAULT_CONFIG,
   type Config,
 } from "./server/config.ts";
+import { isLocalOrigin, requestGuard } from "./server/lib/request-guard.ts";
 import { probe as probeLlm, defaultBaseUrl, LlmError, queueStats } from "./server/providers/llm.ts";
 import { probeTts, synthesize, TtsError } from "./server/providers/tts.ts";
 import { runConversation, generateShowNotes, warmUp, type Turn } from "./server/pipeline/conversation.ts";
@@ -330,6 +331,8 @@ async function renderDjBumper(config: Config, spotId: string, seed: number, mode
 
 async function main() {
   const app = express();
+  // First of all: refuse a Host that is not this PC (DNS rebinding) and writes from another site (see request-guard.ts).
+  app.use(requestGuard);
   app.use(express.json({ limit: "4mb" }));
 
   fs.mkdirSync(SHOWS_DIR, { recursive: true });
@@ -357,7 +360,11 @@ async function main() {
 
   app.use("/api/world/v1", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // Pages served from this PC (a browser-based game client) may call the world API; a page from any other
+    // site may not even read it. Commands additionally need X-World-Key.
+    const requester = req.header("Origin");
+    if (isLocalOrigin(requester)) res.setHeader("Access-Control-Allow-Origin", requester!);
+    res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",

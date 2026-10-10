@@ -752,6 +752,7 @@ image model.
 | `npm run dev`      | Run the app with auto-reload                           |
 | `npm run doctor`   | Check model, speech and config, and explain any issues |
 | `npm run selftest` | Offline tests for the audio engine and text handling   |
+| `npm run guard-selftest` | Offline tests for the request guard (Host and cross-site checks) |
 | `npm run ttstest`  | Speak a line through every available engine and compare |
 | `npm run ttstest -- piper` | Test just one engine                           |
 | `npm run e2e -- "topic"` | Generate a show from the command line            |
@@ -787,5 +788,10 @@ show id, so a given show always sounds the same and nothing is ever downloaded.
 - After a code change, reload the browser tab — an open page keeps the old
   JavaScript until it is refreshed.
 - The server binds to `127.0.0.1` only — it is not reachable from your network.
+- A loopback bind does not stop a web page you visit, so the server also refuses any request whose `Host` is not
+  `localhost`, `127.0.0.1` or `[::1]` (DNS rebinding), and refuses a change (POST, PUT, DELETE) that a browser labels as coming
+  from another site. The station's own page, scripts and tools such as the Godot client are unaffected. The world API accepts
+  writes from another local page but still needs the key in `data/world_api_token.txt`, and answers cross-origin reads only to
+  pages served from this PC. See `server/lib/request-guard.ts`.
 - The Gemini provider is off by default and only used if you select it and add a key.
 - `_original_backup/` holds the original Google AI Studio version of this app.
