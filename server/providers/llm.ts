@@ -304,6 +304,15 @@ export function generate(config: LlmConfig, opts: GenerateOptions): Promise<stri
   });
 }
 
+/**
+ * LM Studio models that think before answering (Qwen 3.5 and similar) stream
+ * that reasoning separately and can spend the entire token budget on it,
+ * leaving no spoken text. Once a model has done that, later requests ask LM
+ * Studio to skip the reasoning. Models that fit their thinking in the budget
+ * never land here and keep reasoning as before.
+ */
+const reasoningBudgetBlown = new Set<string>();
+
 async function generateNow(config: LlmConfig, opts: GenerateOptions): Promise<string> {
   const base = resolveBaseUrl(config);
   const model = (opts.model || config.model).trim();
@@ -315,12 +324,14 @@ async function generateNow(config: LlmConfig, opts: GenerateOptions): Promise<st
     );
   }
 
+  const reasoningOff = config.provider === "lmstudio" && reasoningBudgetBlown.has(model);
   const payload = {
     model,
     messages: opts.messages,
     temperature: opts.temperature ?? config.temperature,
     max_tokens: opts.maxTokens ?? config.maxTokens,
     stream: true,
+    ...(reasoningOff ? { reasoning_effort: "none" } : {}),
   };
 
   let res: Response;
@@ -359,7 +370,9 @@ async function generateNow(config: LlmConfig, opts: GenerateOptions): Promise<st
           ? `The server did not recognise model "${model}". Refresh the model list and pick one that is actually loaded.`
           : res.status === 401 || res.status === 403
             ? "The server rejected the API key."
-            : connectionHint(config);
+            : reasoningOff && res.status === 400
+              ? `"${model}" would not let reasoning be turned off. Raise Max tokens in Settings or pick a model that does not think.`
+              : connectionHint(config);
 
       throw new LlmError(`HTTP ${res.status}: ${detail}`, hint);
     }
@@ -370,6 +383,7 @@ async function generateNow(config: LlmConfig, opts: GenerateOptions): Promise<st
     const decoder = new TextDecoder();
     let buffer = "";
     let output = "";
+    let sawReasoning = false;
 
     try {
       while (true) {
@@ -389,8 +403,9 @@ async function generateNow(config: LlmConfig, opts: GenerateOptions): Promise<st
 
           try {
             const chunk = JSON.parse(payloadStr) as {
-              choices?: Array<{ delta?: { content?: string }; message?: { content?: string } }>;
+              choices?: Array<{ delta?: { content?: string; reasoning_content?: string }; message?: { content?: string } }>;
             };
+            if (chunk.choices?.[0]?.delta?.reasoning_content) sawReasoning = true;
             const delta = chunk.choices?.[0]?.delta?.content ?? chunk.choices?.[0]?.message?.content ?? "";
             if (delta) {
               output += delta;
@@ -406,6 +421,10 @@ async function generateNow(config: LlmConfig, opts: GenerateOptions): Promise<st
     }
 
     const cleaned = stripReasoning(output);
+    if (!cleaned && sawReasoning && config.provider === "lmstudio" && !reasoningBudgetBlown.has(model)) {
+      reasoningBudgetBlown.add(model);
+      return generateNow(config, opts);
+    }
     if (!cleaned) {
       throw new LlmError(
         "The model returned no usable text.",
