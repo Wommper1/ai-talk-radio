@@ -44,6 +44,52 @@ The JSON body contains `id`, `actorId`, `type`, `expectedRevision`, and `payload
 
 Successful responses contain the deterministic outcome and the newly committed snapshot. A stale expected revision returns HTTP 409 without changing the world. Repeating a successful command id returns the original result without applying it twice.
 
+### POST /api/world/v1/converse
+
+Speaks with a character standing at the player's place. It needs the same `X-World-Key` header as commands. It is read-only on the world: it never moves anyone and never records a deed. A client records the conversation by also sending the ordinary `talk` command.
+
+```json
+{ "npcId": "npc_culbertson_docent", "actorId": "<player id from the snapshot>", "line": "Who built this house?" }
+```
+
+`line` is at most 400 characters and may be empty, which is a greeting. A successful reply:
+
+```json
+{
+  "contract": "world.v1",
+  "npc": { "id": "npc_culbertson_docent", "name": "Odalys Marlowe", "occupation": "night docent" },
+  "place": { "name": "Culbertson Mansion", "record": "OFFICIAL_SOURCE", "doNotVisit": false },
+  "text": "Mind the staircase, and welcome. ...",
+  "source": "offline",
+  "rejected": 0,
+  "remembered": false
+}
+```
+
+- `source` is `model` when the local model's reply passed the narration rules, and `offline` when the words come from the place's own record instead. A client should say which, as the Godot client does ("from the record").
+- `rejected` counts model replies thrown away for breaking the rules (an invented date or figure, a legend told as fact, a missing attribution, a missing safety note at a do-not-visit place).
+- `record` is the place's tier, as in `lore.confidence`. `doNotVisit` fails toward `true` if the answer is unclear.
+
+The server checks, in this order: the key, the request's shape, that the player is in the active party and not fallen, that nobody is in combat, that the character is alive and standing where the player stands, and that fewer than two conversations are already running.
+
+| Status | `code` | Meaning |
+| --- | --- | --- |
+| 400 | `invalid_request` | The body is malformed, the character id is not a plain id, or the line is too long. |
+| 401 | `unauthorized` | The world key is missing or wrong. |
+| 404 | `actor_not_found`, `npc_not_found` | No such player in the party, or no such character. |
+| 409 | `not_here`, `in_combat`, `actor_fallen`, `npc_unavailable`, `no_active_party` | The scene does not allow a conversation. |
+| 429 | `busy` | Two conversations are already running. `Retry-After` is set. |
+| 501 | `not_configured` | Conversation is off on this server. |
+| 502, 503, 504 | `bad_engine_answer`, `realm_unavailable`, `world_unreadable`, `engine_timeout` | The conversation script or the world could not answer. |
+
+Setup, in `config.json`:
+
+```json
+{ "orion": { "converse": { "projectPath": "C:/path/to/SouthernIndianaRealm", "remember": false } } }
+```
+
+`projectPath` is the Southern Indiana Realm folder, whose `tools/converse.py` the server runs once per turn (Python from `REALM_PYTHON`, the project's `.venv`, or `PATH`). It is empty by default, which leaves the endpoint off; `GET /api/world/v1/capabilities` reports `conversation.enabled`. The model is the one in `llm.baseUrl` and `llm.model`, called only if it is on this machine; with a Gemini provider, or if the model is down, characters answer from the record. `remember` (off by default, and separate from `orion.writeBack`) lets each character keep one line about each conversation in the world's `npcs` table.
+
 ## Schema versions
 
 `schemaVersion` counts additive changes inside `world.v1`. A client that ignores fields it does not know keeps working across versions. Breaking changes need a new route.

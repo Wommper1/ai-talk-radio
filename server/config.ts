@@ -248,6 +248,20 @@ export interface OrionConfig {
   /** The game folder. Empty means "look where it usually is". */
   realmPath: string;
   /**
+   * Talking with the lore-pack characters at the player's place
+   * (POST /api/world/v1/converse).
+   *
+   * `projectPath` is the Southern Indiana Realm folder, which holds the
+   * narration code. Empty means conversation is off. Like `realmPath` it names
+   * somebody else's project: it is only ever opened to run one script, never
+   * created and never written to.
+   *
+   * `remember` lets a character keep one line, in its own words, about each
+   * conversation (in the world's npcs table). Off by default, and separate from
+   * `writeBack`, which is the radio show's own return trip into the chronicle.
+   */
+  converse: { projectPath: string; remember: boolean };
+  /**
    * The realm's history, in your words.
    *
    * The game's chronicle records what has been *done* — battles, deaths,
@@ -524,6 +538,7 @@ export const DEFAULT_CONFIG: Config = {
   orion: {
     enabled: false,
     realmPath: "",
+    converse: { projectPath: "", remember: false },
     lore:
       "Orion did not inherit this realm, he took it. He burned, robbed and annexed his way across " +
       "every land that touched his border, and the ones he did not take he bled. That is how the " +
@@ -854,6 +869,7 @@ export function normalizeConfig(raw: unknown): Config {
   // ever opened, never created, and the reader refuses any folder that does
   // not already contain the game's world.db.
   const orionIn = (input.orion ?? {}) as Partial<OrionConfig>;
+  const converseIn = (orionIn.converse ?? {}) as Partial<OrionConfig["converse"]>;
   const kingIn = (orionIn.king ?? {}) as Partial<OrionConfig["king"]>;
   const kingVoices = (kingIn.voices ?? {}) as Partial<Record<TtsEngine, string>>;
   const chroniclerIn = (orionIn.chronicler ?? {}) as Partial<OrionConfig["chronicler"]>;
@@ -862,6 +878,10 @@ export function normalizeConfig(raw: unknown): Config {
   const orion: OrionConfig = {
     enabled: typeof orionIn.enabled === "boolean" ? orionIn.enabled : d.orion.enabled,
     realmPath: str(orionIn.realmPath, d.orion.realmPath).trim().slice(0, 400),
+    converse: {
+      projectPath: str(converseIn.projectPath, d.orion.converse.projectPath).trim().slice(0, 400),
+      remember: typeof converseIn.remember === "boolean" ? converseIn.remember : d.orion.converse.remember,
+    },
     lore: str(orionIn.lore, d.orion.lore).slice(0, 4000),
     writeBack: typeof orionIn.writeBack === "boolean" ? orionIn.writeBack : d.orion.writeBack,
     guildVoices: typeof orionIn.guildVoices === "boolean" ? orionIn.guildVoices : d.orion.guildVoices,

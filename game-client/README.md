@@ -14,6 +14,7 @@ Godot 4.7.2 is installed locally under `tools/godot-4.7.2`, so no system-wide in
 - Godot supports map travel, random and quest combat, defend/flee/revive, rest, investigation, conversation records, reputation choices, item use/equipment/trading, quest progression, and archived radio playback.
 - Radio claims remain visibly separate from canonical game events.
 - Places taken from a real-world lore pack show their record tier, era, sources and access status, and a do-not-visit warning where the real site is unsafe or closed (`world.v1` schemaVersion 2, see `docs/WORLD_API_V1.md`). Fictional places show nothing extra.
+- A **Place** tab shows the selected place's record and lists the characters standing where the player stands, at places that come from a lore pack. Choose one, type a line and press Speak (or Enter) to talk. The reply says when it came from the place's record and not from the model, and the conversation is recorded with the ordinary `talk` command. Needs `orion.converse.projectPath` set on the server (see `docs/WORLD_API_V1.md`); without it the panel says conversation is not set up.
 - The client automatically refreshes every five seconds and also supports manual refresh.
 - Every mutation carries an expected world revision and an idempotency key. Conflicts refresh instead of overwriting another player's turn.
 

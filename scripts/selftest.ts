@@ -94,6 +94,14 @@ import { ORION_EXAMPLES, selectOrionExamples } from "../server/orion/examples.ts
 import { evaluateOrionTranscript } from "../server/orion/eval.ts";
 import { createWorldSnapshot, WORLD_CONTRACT } from "../server/orion/world-contract.ts";
 import { parseWorldCommand, WorldCommandError } from "../server/orion/world-command.ts";
+import {
+  CONVERSE_MAX_LINE,
+  converse,
+  ConverseError,
+  interpretAnswer,
+  parseConverseRequest,
+  type ConverseRunner,
+} from "../server/orion/converse.ts";
 import { orionTrainingReadiness, orionTrainingRows } from "../server/orion/training.ts";
 import { forgetTales, recordTales } from "../server/orion/chronicle.ts";
 import { choosePetitioner, isWommper, voiceForMember } from "../server/orion/petitioners.ts";
@@ -976,6 +984,21 @@ check(
   "rubbish is ignored rather than read as off",
   normalizeConfig({ orion: { guildVoices: "no" } }).orion.guildVoices === DEFAULT_CONFIG.orion.guildVoices,
 );
+check("conversation is off by default", DEFAULT_CONFIG.orion.converse.projectPath === "" && DEFAULT_CONFIG.orion.converse.remember === false);
+check(
+  "a saved config from before conversation existed keeps it off",
+  normalizeConfig({ orion: { guildVoices: false } }).orion.converse.projectPath === "",
+);
+check(
+  "the conversation project path is trimmed and bounded",
+  normalizeConfig({ orion: { converse: { projectPath: "  C:/x  " } } }).orion.converse.projectPath === "C:/x" &&
+    normalizeConfig({ orion: { converse: { projectPath: "a".repeat(900) } } }).orion.converse.projectPath.length === 400,
+);
+check(
+  "conversation memory only accepts a real boolean",
+  normalizeConfig({ orion: { converse: { remember: "yes" } } }).orion.converse.remember === false &&
+    normalizeConfig({ orion: { converse: { remember: true } } }).orion.converse.remember === true,
+);
 
 /* ── The commercial bucket ────────────────────────────────────── */
 
@@ -1444,6 +1467,185 @@ try {
 } finally {
   fs.rmSync(legacyRoot, { recursive: true, force: true });
   fs.rmSync(loreRoot, { recursive: true, force: true });
+}
+
+// Talking with a character: the server owns every check a client must not be trusted with.
+const converseOk = JSON.stringify({
+  ok: true,
+  npc: { id: "npc_a", name: "Aldric Fenn", occupation: "miller" },
+  place: { name: "Mill Hall", record: "OFFICIAL_SOURCE", doNotVisit: false },
+  text: "Good day.",
+  source: "offline",
+  rejected: 0,
+  remembered: false,
+});
+const converseFailure = async (promise: Promise<unknown>): Promise<ConverseError | null> => {
+  try {
+    await promise;
+    return null;
+  } catch (error) {
+    return error instanceof ConverseError ? error : null;
+  }
+};
+
+const goodRequest = parseConverseRequest({ npcId: "npc_a", actorId: "42", line: "  Who built it?\u0000\n " });
+check("a conversation request is trimmed and cleaned", goodRequest.line === "Who built it?" && goodRequest.npcId === "npc_a");
+check("an empty line is a greeting, not an error", parseConverseRequest({ npcId: "npc_a", actorId: "42", line: "" }).line === "");
+for (const [label, body] of [
+  ["a non-object", "hello"],
+  ["an array", []],
+  ["an uppercase id", { npcId: "NPC_A", actorId: "42", line: "x" }],
+  ["a path-like id", { npcId: "../etc/passwd", actorId: "42", line: "x" }],
+  ["an id with spaces", { npcId: "npc a", actorId: "42", line: "x" }],
+  ["an overlong id", { npcId: "n".repeat(80), actorId: "42", line: "x" }],
+  ["a missing actor", { npcId: "npc_a", line: "x" }],
+  ["a numeric line", { npcId: "npc_a", actorId: "42", line: 7 }],
+  ["a line over the limit", { npcId: "npc_a", actorId: "42", line: "x".repeat(CONVERSE_MAX_LINE + 1) }],
+] as Array<[string, unknown]>) {
+  let rejectedBody = false;
+  try {
+    parseConverseRequest(body);
+  } catch (error) {
+    rejectedBody = error instanceof ConverseError && error.status === 400;
+  }
+  check(`a conversation request with ${label} is rejected`, rejectedBody);
+}
+
+const sceneRoots: string[] = [];
+function makeScene(options: { combat?: boolean; fallen?: boolean; npcAt?: string; npcAlive?: boolean; discord?: boolean } = {}): string {
+  const dir = fs.mkdtempSync(path.join(process.cwd(), ".realm-converse-"));
+  sceneRoots.push(dir);
+  const sceneDb = new DatabaseSync(path.join(dir, "world.db"));
+  sceneDb.exec(`
+    CREATE TABLE realm_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO realm_meta VALUES ('current_campaign_id', 'c1');
+    CREATE TABLE discord_runtime (campaign_id TEXT PRIMARY KEY, state_json TEXT NOT NULL, roster_json TEXT NOT NULL, revision INTEGER NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE npcs (npc_id TEXT, name TEXT, current_location TEXT, is_alive INTEGER, current_mood TEXT);
+  `);
+  if (options.discord !== false) {
+    const state = JSON.stringify({ total_turns: 1, location: "Mill Hall", in_combat: options.combat === true });
+    const roster = JSON.stringify({
+      "42": { name: "Ashra", is_fallen: options.fallen === true, stats: { player_class: "mage", level: 2, current_hp: 20, max_hp: 25, location: "Mill Hall" } },
+    });
+    sceneDb.prepare("INSERT INTO discord_runtime VALUES ('c1', ?, ?, 3, ?)").run(state, roster, new Date().toISOString());
+  }
+  sceneDb.prepare("INSERT INTO npcs VALUES ('npc_a', 'Aldric Fenn', ?, ?, 'calm')").run(options.npcAt ?? "Mill Hall", options.npcAlive === false ? 0 : 1);
+  sceneDb.close();
+  return dir;
+}
+const projectDir = fs.mkdtempSync(path.join(process.cwd(), ".realm-project-"));
+fs.mkdirSync(path.join(projectDir, "tools"));
+fs.writeFileSync(path.join(projectDir, "tools", "converse.py"), "# stub\n");
+const converseConfig = (realmPath: string, project = projectDir, patch: Partial<typeof DEFAULT_CONFIG.llm> = {}) => ({
+  ...DEFAULT_CONFIG,
+  llm: { ...DEFAULT_CONFIG.llm, ...patch },
+  orion: { ...DEFAULT_CONFIG.orion, realmPath, converse: { projectPath: project, remember: false } },
+});
+const answers: ConverseRunner = async () => converseOk;
+const body = { npcId: "npc_a", actorId: "42", line: "Who built it?" };
+
+try {
+  const scene = makeScene();
+  let seen: Parameters<ConverseRunner>[0] | null = null;
+  const result = await converse(converseConfig(scene), body, { runner: async (input) => { seen = input; return converseOk; } });
+  check("a conversation returns the character, the place and the words", result.text === "Good day." && result.npc.name === "Aldric Fenn" && result.place.record === "OFFICIAL_SOURCE");
+  check("a conversation names the contract", result.contract === WORLD_CONTRACT);
+  const sent = (seen as Parameters<ConverseRunner>[0] | null)?.request ?? {};
+  check("the script is run in isolated mode on the configured project", (seen as { script?: string } | null)?.script === path.join(projectDir, "tools", "converse.py"));
+  check("the script is given the realm's own database path, not the client's", sent.db === path.join(scene, "world.db"));
+  check("the script is given only what the client may choose", sent.npcId === "npc_a" && sent.line === "Who built it?" && sent.player === "Ashra");
+  check("a local provider is not forced offline", sent.offline === false && sent.baseUrl === DEFAULT_CONFIG.llm.baseUrl);
+  check("memory is off unless conversation memory is switched on", sent.remember === false);
+  check("the radio's write-back switch does not turn conversation memory on", DEFAULT_CONFIG.orion.writeBack === true);
+
+  const gemini = await converse(converseConfig(scene, projectDir, { provider: "gemini" }), body, { runner: async (input) => { seen = input; return converseOk; } });
+  check("a non-local provider answers from the record", gemini.source === "offline" && (seen as { request: Record<string, unknown> } | null)?.request.offline === true);
+  const remembering = converseConfig(scene);
+  await converse({ ...remembering, orion: { ...remembering.orion, converse: { projectPath: projectDir, remember: true } } }, body, { runner: async (input) => { seen = input; return converseOk; } });
+  check("the conversation memory switch turns memory on", (seen as { request: Record<string, unknown> } | null)?.request.remember === true);
+
+  const cases: Array<[string, string, ConverseRunner, number, string, Partial<Parameters<typeof makeScene>[0]>?]> = [
+    ["a character elsewhere is not here", "not_here", answers, 409, "not_here", { npcAt: "The Old Quarry" }],
+    ["place names match without 'the' or punctuation", "ok", answers, 200, "", { npcAt: "the mill-hall" }],
+    ["a fight stops the conversation", "in_combat", answers, 409, "in_combat", { combat: true }],
+    ["a fallen player cannot speak", "actor_fallen", answers, 409, "actor_fallen", { fallen: true }],
+    ["a dead character cannot answer", "npc_unavailable", answers, 409, "npc_unavailable", { npcAlive: false }],
+    ["a world with no party has no one to speak", "no_active_party", answers, 409, "no_active_party", { discord: false }],
+  ];
+  for (const [label, , runner, status, code, scenePatch] of cases) {
+    const failed = await converseFailure(converse(converseConfig(makeScene(scenePatch)), body, { runner }));
+    if (status === 200) check(`${label}`, failed === null);
+    else check(`${label}`, failed?.status === status && failed.code === code);
+  }
+  const wrongActor = await converseFailure(converse(converseConfig(scene), { ...body, actorId: "7" }, { runner: answers }));
+  check("an unknown player is refused", wrongActor?.code === "actor_not_found" && wrongActor.status === 404);
+  const wrongNpc = await converseFailure(converse(converseConfig(scene), { ...body, npcId: "npc_zzz" }, { runner: answers }));
+  check("an unknown character is refused", wrongNpc?.code === "npc_not_found" && wrongNpc.status === 404);
+
+  let ranForRefused = false;
+  await converseFailure(converse(converseConfig(makeScene({ npcAt: "Elsewhere" })), body, { runner: async () => { ranForRefused = true; return converseOk; } }));
+  check("a refused conversation never starts the script", !ranForRefused);
+
+  const off = await converseFailure(converse(converseConfig(scene, ""), body, { runner: answers }));
+  check("conversation is off until a project is configured", off?.status === 501 && off.code === "not_configured");
+  const missingScript = await converseFailure(converse(converseConfig(scene, path.join(projectDir, "nowhere")), body, { runner: answers }));
+  check("a project without the script is treated as not set up", missingScript?.status === 501);
+  const noRealm = await converseFailure(converse(converseConfig(path.join(projectDir, "no-realm")), body, { runner: answers }));
+  check("a missing realm is reported as unavailable", noRealm?.status === 503 && noRealm.code === "realm_unavailable");
+  check("the not-set-up message does not reveal paths", !String(off?.message).includes(projectDir));
+
+  // Only two conversations at once; a third is told to wait, and slots are always given back.
+  const gates: Array<() => void> = [];
+  const slow: ConverseRunner = () => new Promise<string>((resolve) => gates.push(() => resolve(converseOk)));
+  const first = converse(converseConfig(scene), body, { runner: slow });
+  const second = converse(converseConfig(scene), body, { runner: slow });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const third = await converseFailure(converse(converseConfig(scene), body, { runner: slow }));
+  check("a third simultaneous conversation is told to wait", third?.status === 429 && third.code === "busy" && third.details?.retryAfterSeconds === 3);
+  gates.forEach((release) => release());
+  await Promise.all([first, second]);
+  const crashed = await converseFailure(converse(converseConfig(scene), body, { runner: async () => { throw new ConverseError("boom", "engine_failed", 500); } }));
+  check("a failing script is reported", crashed?.status === 500);
+  const after = await converseFailure(converse(converseConfig(scene), body, { runner: answers }));
+  check("slots are returned after success and failure", after === null);
+  let thrownPlain = false;
+  try {
+    await converse(converseConfig(scene), body, { runner: async () => { throw new Error("plain"); } });
+  } catch {
+    thrownPlain = true;
+  }
+  check("a plain crash still returns its slot", thrownPlain && (await converseFailure(converse(converseConfig(scene), body, { runner: answers }))) === null);
+} finally {
+  for (const dir of sceneRoots) fs.rmSync(dir, { recursive: true, force: true });
+  fs.rmSync(projectDir, { recursive: true, force: true });
+}
+
+// What the script prints is not trusted either.
+const answerOf = (patch: Record<string, unknown>) => JSON.stringify({ ...JSON.parse(converseOk), ...patch });
+const parsedAnswer = interpretAnswer(`some stray log line\n${converseOk}\n`);
+check("the last line of the script's output is the answer", parsedAnswer.text === "Good day." && parsedAnswer.source === "offline");
+check("an unknown record tier fails closed", interpretAnswer(answerOf({ place: { name: "Mill Hall", record: "very sure", doNotVisit: false } })).place.record === "UNVERIFIED");
+check("a do-not-visit flag fails toward the warning", interpretAnswer(answerOf({ place: { name: "Mill Hall", record: "VERIFIED" } })).place.doNotVisit === true);
+check("an explicit false clears the warning", interpretAnswer(answerOf({ place: { name: "Mill Hall", record: "VERIFIED", doNotVisit: false } })).place.doNotVisit === false);
+check("an overlong reply is clamped", interpretAnswer(answerOf({ text: "x".repeat(5000) })).text.length === 800);
+check("the rejected count is bounded", interpretAnswer(answerOf({ rejected: 9999 })).rejected === 10 && interpretAnswer(answerOf({ rejected: "many" })).rejected === 0);
+for (const [label, printed, status] of [
+  ["unreadable output", "not json at all", 502],
+  ["empty output", "", 502],
+  ["an answer with no text", answerOf({ text: "  " }), 502],
+  ["an answer with an unknown source", answerOf({ source: "oracle" }), 502],
+  ["an answer with no character", answerOf({ npc: {} }), 502],
+  ["the script's own refusal of an unknown character", JSON.stringify({ ok: false, code: "unknown_npc", message: "There is no such character." }), 404],
+  ["the script's own refusal of an unreadable world", JSON.stringify({ ok: false, code: "world_unreadable", message: "x" }), 503],
+  ["the script's refusal with a code it invented", JSON.stringify({ ok: false, code: "surprise", message: "x" }), 502],
+] as Array<[string, string, number]>) {
+  let mapped = 0;
+  try {
+    interpretAnswer(printed);
+  } catch (error) {
+    mapped = error instanceof ConverseError ? error.status : -1;
+  }
+  check(`${label} maps to ${status}`, mapped === status);
 }
 
 // The briefing's framing is load-bearing: written the other way round the King
