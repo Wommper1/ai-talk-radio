@@ -9,7 +9,11 @@ import type { StoredShow } from "../pipeline/store.ts";
 import type { Realm, RealmClaim, RealmEvent } from "./realm.ts";
 
 export const WORLD_CONTRACT = "world.v1" as const;
-export const WORLD_SCHEMA_VERSION = 1;
+/**
+ * Additive changes within `world.v1` bump this number; breaking changes need a new route.
+ *   2  locations carry an optional `lore` object (tier, sources, access, coordinates).
+ */
+export const WORLD_SCHEMA_VERSION = 2;
 
 export interface WorldSnapshot {
   contract: typeof WORLD_CONTRACT;
@@ -115,6 +119,7 @@ function normalizedLocations(locations: Realm["locations"]): Realm["locations"] 
       type: location.type || existing.type,
       description: location.description || existing.description,
       connectedTo: [...new Set([...existing.connectedTo, ...location.connectedTo])],
+      lore: location.lore ?? existing.lore,
     });
   }
   return [...merged.values()];

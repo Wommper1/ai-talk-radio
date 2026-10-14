@@ -14,7 +14,7 @@ Returns a normalized snapshot containing:
 
 - campaign identity and revision
 - active player and party
-- locations and routes
+- locations and routes, each with an optional `lore` object (see below)
 - active quests
 - canonical events
 - noncanonical radio claims
@@ -43,6 +43,35 @@ Commits one authenticated world action. Required headers are `Content-Type: appl
 The JSON body contains `id`, `actorId`, `type`, `expectedRevision`, and `payload`. Supported actions are travel, attack, defend, flee, hunt, use, equip, buy, sell, talk, investigate, help, crime, rest, and revive.
 
 Successful responses contain the deterministic outcome and the newly committed snapshot. A stale expected revision returns HTTP 409 without changing the world. Repeating a successful command id returns the original result without applying it twice.
+
+## Schema versions
+
+`schemaVersion` counts additive changes inside `world.v1`. A client that ignores fields it does not know keeps working across versions. Breaking changes need a new route.
+
+| schemaVersion | Change |
+| --- | --- |
+| 1 | Original snapshot. |
+| 2 | Each location has a `lore` field: an object, or `null` for a fictional place or a database without lore columns. |
+
+## Location lore (schemaVersion 2)
+
+A place taken from a real-world lore pack, such as the Southern Indiana Lore pack, carries its provenance in `lore`:
+
+| Field | Meaning |
+| --- | --- |
+| `siteId` | The pack's id for the site. |
+| `confidence` | One of `OFFICIAL_SOURCE`, `VERIFIED`, `PROBABLE`, `ORAL_HISTORY`, `LEGEND`, `UNVERIFIED`. A missing or unrecognised value is `UNVERIFIED`; it is never read as a better tier. |
+| `verificationGrade`, `county`, `era`, `category` | Descriptive text from the pack. |
+| `sources`, `sourceNotes` | Citations for the location's `description`. |
+| `accessStatus` | Who can visit the real site, and how. |
+| `doNotVisit` | `true` when visiting the real site is unsafe or not allowed. Clients must show this warning. Unreadable values read as `true`. |
+| `latitude`, `longitude` | Real-world coordinates, or `null`. |
+
+Rules for clients:
+
+1. A location's `description` is verified history only. Do not append folklore to it.
+2. Folklore is deliberately not part of this contract. A client that needs to show the legend layer needs a labelled field added in a later `schemaVersion`.
+3. Show the tier next to anything presented as history, so a `LEGEND` or `UNVERIFIED` place is never read as established fact.
 
 ## Ownership rules
 

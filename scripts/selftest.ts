@@ -83,6 +83,7 @@ import {
 } from "../shared/station-automation.ts";
 import {
   GUILD_NAME,
+  parseLoreConfidence,
   readRealm,
   realmBriefing,
   realmSummary,
@@ -1373,6 +1374,76 @@ try {
   check("a radio claim can be removed without derived canon", forgotten.written === 1 && readRealm(contractRoot).claims.length === 0);
 } finally {
   fs.rmSync(contractRoot, { recursive: true, force: true });
+}
+
+// Places taken from a real-world lore pack carry their provenance in `lore`, and
+// the legend layer must never ride along into the snapshot or the radio briefing.
+check("lore tiers fail closed on nothing", parseLoreConfidence(undefined) === "UNVERIFIED" && parseLoreConfidence("  ") === "UNVERIFIED");
+check("lore tiers fail closed on nonsense", parseLoreConfidence("totally trustworthy") === "UNVERIFIED");
+check("lore tiers read the canonical names", parseLoreConfidence("OFFICIAL_SOURCE") === "OFFICIAL_SOURCE" && parseLoreConfidence("official source") === "OFFICIAL_SOURCE");
+check("lore tiers never promote an unverified claim", parseLoreConfidence("unverified") === "UNVERIFIED" && parseLoreConfidence("Verified") === "VERIFIED");
+check("lore tiers read folklore as legend", parseLoreConfidence("folklore") === "LEGEND" && parseLoreConfidence("oral tradition") === "ORAL_HISTORY");
+
+const legacyRoot = fs.mkdtempSync(path.join(process.cwd(), ".realm-legacy-"));
+const loreRoot = fs.mkdtempSync(path.join(process.cwd(), ".realm-lore-"));
+try {
+  const legacyDb = new DatabaseSync(path.join(legacyRoot, "world.db"));
+  legacyDb.exec(`
+    CREATE TABLE locations (location_id TEXT, name TEXT, type TEXT, description TEXT, connected_to TEXT);
+    INSERT INTO locations VALUES ('brindlemark', 'Brindlemark', 'village', 'A working village.', '["The Wildlands"]');
+  `);
+  legacyDb.close();
+  const legacy = createWorldSnapshot(readRealm(legacyRoot));
+  check("a database without lore columns still reads", legacy.locations.length === 1 && legacy.locations[0]?.name === "Brindlemark");
+  check("a place without lore reports lore as null", legacy.locations[0]?.lore === null);
+
+  const loreDb = new DatabaseSync(path.join(loreRoot, "world.db"));
+  loreDb.exec(`
+    CREATE TABLE locations (
+      location_id TEXT, name TEXT, type TEXT, description TEXT, connected_to TEXT,
+      lore_site_id TEXT, confidence_level TEXT, verification_grade TEXT, county TEXT, era TEXT,
+      category TEXT, sources TEXT, source_notes TEXT, access_status TEXT, do_not_visit INTEGER,
+      latitude REAL, longitude REAL, folklore_tradition TEXT, verified_history TEXT
+    );
+  `);
+  const addPlace = loreDb.prepare("INSERT INTO locations VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  const canary = "FOLKLORE-CANARY-7731";
+  addPlace.run("depot", "Testville Depot", "transport", "Built in 1850 by a documented builder.", "[]",
+    "t_depot", "OFFICIAL_SOURCE", "Archival", "Testford County", "1850s", "Rail", "Deed book 1", "Notes", "Public park", 0, 38.3, -85.8, `${canary} lantern`, "Built in 1850 by a documented builder.");
+  addPlace.run("bridge", "Alder Bridge", "transport", "Opened in 1901.", "[]",
+    "t_bridge", "legend", "Oral", "Testford County", "1900s", "Rail", "Ledger", "", "Active Freight Rail Bridge", 1, "not a number", null, `${canary} ghost train`, "Opened in 1901.");
+  addPlace.run("ford", "Low Ford", "crossing", "No independent archival record is established for this site.", "[]",
+    "t_ford", "totally trustworthy", "", "Testford County", "", "", "", "", "", null, null, null, canary, "");
+  addPlace.run("keep", "The Keep", "castle", "A fictional keep.", "[]", "", "OFFICIAL_SOURCE", "", "", "", "", "", "", "", 0, null, null, canary, "");
+  loreDb.close();
+
+  const loreRealm = readRealm(loreRoot);
+  const loreSnapshot = createWorldSnapshot(loreRealm);
+  const byName = (name: string) => loreSnapshot.locations.find((l) => l.name === name);
+  check("the contract version names the lore fields", loreSnapshot.schemaVersion === 2);
+  check("a lore place carries its tier and provenance", byName("Testville Depot")?.lore?.confidence === "OFFICIAL_SOURCE" && byName("Testville Depot")?.lore?.sources === "Deed book 1");
+  check("a lore place keeps its coordinates", byName("Testville Depot")?.lore?.latitude === 38.3 && byName("Testville Depot")?.lore?.longitude === -85.8);
+  check("a bad coordinate becomes null instead of NaN", byName("Alder Bridge")?.lore?.latitude === null);
+  check("a lore tier is normalised", byName("Alder Bridge")?.lore?.confidence === "LEGEND");
+  check("an unrecognised tier fails closed to unverified", byName("Low Ford")?.lore?.confidence === "UNVERIFIED");
+  check("the do-not-visit flag is read as a boolean", byName("Alder Bridge")?.lore?.doNotVisit === true && byName("Testville Depot")?.lore?.doNotVisit === false);
+  check("a missing do-not-visit value is not a warning", byName("Low Ford")?.lore?.doNotVisit === false);
+  check("a place with no lore site id is not given a tier", byName("The Keep")?.lore === null);
+  check("a lore place's description is its verified history", byName("Testville Depot")?.description === "Built in 1850 by a documented builder.");
+  check("the snapshot never carries folklore", !JSON.stringify(loreSnapshot).includes(canary));
+  check("the radio briefing never carries folklore", !realmBriefing(loreRealm, "").includes(canary));
+
+  const twinSnapshot = createWorldSnapshot({
+    ...absent,
+    locations: [
+      { id: "a", name: "The Mill", type: "ruin", description: "", connectedTo: ["X"], lore: byName("Testville Depot")?.lore ?? null },
+      { id: "b", name: "Mill", type: "", description: "", connectedTo: ["Y"], lore: null },
+    ],
+  });
+  check("merging two spellings of a place keeps its lore", twinSnapshot.locations.length === 1 && twinSnapshot.locations[0]?.lore?.siteId === "t_depot");
+} finally {
+  fs.rmSync(legacyRoot, { recursive: true, force: true });
+  fs.rmSync(loreRoot, { recursive: true, force: true });
 }
 
 // The briefing's framing is load-bearing: written the other way round the King
