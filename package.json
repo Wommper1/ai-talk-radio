@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "doctor": "tsx scripts/doctor.ts",
     "selftest": "tsx scripts/selftest.ts",
+    "converse-integration": "tsx scripts/converse-integration.ts",
     "guard-selftest": "tsx scripts/request-guard-selftest.ts",
     "automation-selftest": "tsx scripts/automation-selftest.ts",
     "unattended-status": "tsx scripts/unattended-status.ts",

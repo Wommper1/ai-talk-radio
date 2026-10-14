@@ -90,6 +90,8 @@ Setup, in `config.json`:
 
 `projectPath` is the Southern Indiana Realm folder, whose `tools/converse.py` the server runs once per turn (Python from `REALM_PYTHON`, the project's `.venv`, or `PATH`). It is empty by default, which leaves the endpoint off; `GET /api/world/v1/capabilities` reports `conversation.enabled`. The model is the one in `llm.baseUrl` and `llm.model`, called only if it is on this machine; with a Gemini provider, or if the model is down, characters answer from the record. `remember` (off by default, and separate from `orion.writeBack`) lets each character keep one line about each conversation in the world's `npcs` table.
 
+`npm run converse-integration` checks the endpoint end to end: it starts the real server in a temporary folder with its own config and a made-up world key, points it at a throwaway world and a stub model that the script controls, and drives the real `tools/converse.py` over HTTP. It covers the key, the model being down, good and rule-breaking model replies, the do-not-visit safety note, every scene refusal, the two-at-once limit, and memory (off by default, then on). It needs the Southern Indiana Realm project (`REALM_PROJECT_PATH`) and Python (`REALM_PYTHON`), and prints `SKIPPED` without them; set `REALM_REQUIRE=1` to make that a failure.
+
 ## Schema versions
 
 `schemaVersion` counts additive changes inside `world.v1`. A client that ignores fields it does not know keeps working across versions. Breaking changes need a new route.
