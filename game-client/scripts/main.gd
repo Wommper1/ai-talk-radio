@@ -3,6 +3,8 @@ extends Control
 const API_ORIGIN := "http://127.0.0.1:3000"
 const SNAPSHOT_URL := API_ORIGIN + "/api/world/v1/snapshot"
 const COMMAND_URL := API_ORIGIN + "/api/world/v1/commands"
+const CONVERSE_URL := API_ORIGIN + "/api/world/v1/converse"
+const TALK_MAX_LINE := 400
 const GOLD := Color("#e2b84f")
 const INK := Color("#dce5dc")
 const MUTED := Color("#93a198")
@@ -70,11 +72,26 @@ var request_in_flight := false
 var command_in_flight := false
 var world_key := ""
 var selected_location: Dictionary = {}
+var talk_request: HTTPRequest
+var talk_box: VBoxContainer
+var talk_picker: OptionButton
+var talk_line: LineEdit
+var talk_send: Button
+var talk_reply: Label
+var talk_in_flight := false
+var talk_npc_ids: Array = []
+var talk_reply_npc_id := ""
+var lore_heading: Label
+var lore_label: Label
+var people_heading: Label
+var talk_empty: Label
+var talk_log: RichTextLabel
 
 
 func _ready() -> void:
 	_apply_style()
 	_load_world_key()
+	_build_talk_panel()
 	refresh_button.pressed.connect(_request_snapshot)
 	play_button.pressed.connect(_play_latest_show)
 	travel_button.pressed.connect(func(): _send_command("travel", {"destination": selected_location.get("name", "")}))
@@ -205,6 +222,7 @@ func _render_snapshot() -> void:
 	_on_location_selected(selected)
 	_render_combat(player, party, quests)
 	_render_inventory(player)
+	_refresh_talk_panel()
 
 	var radio: Dictionary = snapshot.get("radio", {})
 	var latest_value = radio.get("latestShow", null)
@@ -226,6 +244,8 @@ func _on_location_selected(location: Dictionary) -> void:
 	if location.is_empty():
 		location_name.text = "No mapped locations"
 		location_details.text = "Waiting for the realm database."
+		if lore_label != null:
+			lore_label.text = ""
 		_refresh_action_controls()
 		return
 	location_name.text = String(location.get("name", "Unknown location"))
@@ -234,10 +254,11 @@ func _on_location_selected(location: Dictionary) -> void:
 		links.append(String(linked))
 	var route_text := ", ".join(links) if not links.is_empty() else "No mapped routes"
 	var details := "%s\nRoutes: %s" % [String(location.get("description", "No description recorded.")), route_text]
-	var lore_text := _lore_text(location)
-	if not lore_text.is_empty():
-		details += "\n\n" + lore_text
 	location_details.text = _visit_warning(location) + details
+	if lore_label != null:
+		var lore_text := _lore_text(location)
+		lore_heading.text = "ABOUT %s" % String(location.get("name", "this place")).to_upper()
+		lore_label.text = lore_text if not lore_text.is_empty() else "No historical record is attached to this place."
 	location_action_state.text = "Selected destination"
 	_refresh_action_controls()
 
@@ -328,6 +349,233 @@ func _render_inventory(player: Dictionary) -> void:
 		_display_number(reputation.get("crime", 0)),
 	]
 	_refresh_action_controls()
+
+
+# ---- Talking with the characters at the player's place ---------------------------------
+
+
+func _build_talk_panel() -> void:
+	# A tab of its own: the window is a fixed 1280x720 and the Adventure tab is already full.
+	var page := PanelContainer.new()
+	page.name = "Place"
+	var page_style := StyleBoxFlat.new()
+	page_style.bg_color = PANEL
+	page_style.border_color = BORDER
+	page_style.set_border_width_all(1)
+	page_style.set_corner_radius_all(6)
+	page_style.set_content_margin_all(12)
+	page.add_theme_stylebox_override("panel", page_style)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 8)
+	page.add_child(stack)
+
+	lore_heading = _small_heading("ABOUT THIS PLACE")
+	stack.add_child(lore_heading)
+	lore_label = _muted_label("")
+	stack.add_child(lore_label)
+	stack.add_child(_section_rule())
+
+	people_heading = _small_heading("PEOPLE HERE")
+	stack.add_child(people_heading)
+	talk_empty = _muted_label("No one here to talk to.")
+	stack.add_child(talk_empty)
+	talk_box = VBoxContainer.new()
+	talk_box.add_theme_constant_override("separation", 6)
+	talk_box.visible = false
+	talk_picker = OptionButton.new()
+	talk_box.add_child(talk_picker)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	talk_line = LineEdit.new()
+	talk_line.placeholder_text = "Say something..."
+	talk_line.max_length = TALK_MAX_LINE
+	talk_line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	talk_line.text_submitted.connect(func(_text): _send_talk())
+	row.add_child(talk_line)
+	talk_send = Button.new()
+	talk_send.text = "Speak"
+	_style_talk_button(talk_send)
+	talk_send.pressed.connect(_send_talk)
+	row.add_child(talk_send)
+	talk_box.add_child(row)
+	stack.add_child(talk_box)
+
+	talk_reply = _muted_label("")
+	talk_reply.visible = false
+	stack.add_child(talk_reply)
+	talk_log = RichTextLabel.new()
+	talk_log.scroll_following = true
+	talk_log.custom_minimum_size = Vector2(0, 80)
+	talk_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	talk_log.add_theme_font_size_override("normal_font_size", 14)
+	talk_log.add_theme_color_override("default_color", INK)
+	stack.add_child(talk_log)
+
+	action_tabs.add_child(page)
+	talk_request = HTTPRequest.new()
+	talk_request.timeout = 70.0
+	add_child(talk_request)
+	talk_request.request_completed.connect(_on_talk_completed)
+
+
+func _append_talk_log(message: String) -> void:
+	if not talk_log.get_parsed_text().is_empty():
+		talk_log.append_text("\n\n")
+	talk_log.add_text(message)
+
+
+func _style_talk_button(button: Button) -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("#26382e")
+	style.border_color = BORDER
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(5)
+	style.set_content_margin_all(8)
+	button.add_theme_stylebox_override("normal", style)
+	var hover_style: StyleBoxFlat = style.duplicate()
+	hover_style.bg_color = Color("#31483a")
+	button.add_theme_stylebox_override("hover", hover_style)
+	button.add_theme_color_override("font_color", INK)
+
+
+func _as_dict(value: Variant) -> Dictionary:
+	return value if typeof(value) == TYPE_DICTIONARY else {}
+
+
+# Characters standing where the player stands, but only at places that come from a lore
+# pack: those are the ones the server can speak for. Fictional places list no one.
+func _npcs_here(source: Dictionary) -> Array:
+	var found: Array = []
+	var player := _as_dict(source.get("player", null))
+	var here_name := String(player.get("location", ""))
+	var here := _location_key(here_name)
+	if here.is_empty():
+		return found
+	var place := _location_by_name(source.get("locations", []), here_name)
+	if place.is_empty() or typeof(place.get("lore", null)) != TYPE_DICTIONARY:
+		return found
+	for npc_value in source.get("npcs", []):
+		var npc := _as_dict(npc_value)
+		if npc.is_empty() or String(npc.get("id", "")).is_empty():
+			continue
+		if String(npc.get("status", "alive")) != "alive":
+			continue
+		if _location_key(String(npc.get("location", ""))) == here:
+			found.append(npc)
+	return found
+
+
+func _selected_talk_id() -> String:
+	if talk_picker == null or talk_picker.item_count == 0 or talk_picker.selected < 0:
+		return ""
+	if talk_picker.selected >= talk_npc_ids.size():
+		return ""
+	return String(talk_npc_ids[talk_picker.selected])
+
+
+func _refresh_talk_panel() -> void:
+	if talk_box == null:
+		return
+	var here := _npcs_here(snapshot)
+	var ids: Array = []
+	for npc in here:
+		ids.append(String(npc.get("id", "")))
+	if ids != talk_npc_ids:
+		var previous := _selected_talk_id()
+		talk_npc_ids = ids
+		talk_picker.clear()
+		for npc in here:
+			talk_picker.add_item(String(npc.get("name", "Someone")))
+		if not ids.is_empty():
+			var keep := ids.find(previous)
+			talk_picker.select(keep if keep >= 0 else 0)
+	if not talk_reply_npc_id.is_empty() and not ids.has(talk_reply_npc_id):
+		talk_reply.visible = false
+		talk_reply_npc_id = ""
+	talk_box.visible = not ids.is_empty()
+	talk_empty.visible = ids.is_empty()
+	var here_name := String(_as_dict(snapshot.get("player", null)).get("location", ""))
+	people_heading.text = "PEOPLE AT %s" % here_name.to_upper() if not here_name.is_empty() else "PEOPLE HERE"
+	_update_talk_controls()
+
+
+func _update_talk_controls() -> void:
+	if talk_send == null:
+		return
+	var player := _as_dict(snapshot.get("player", null))
+	var combat := _as_dict(snapshot.get("combat", {}))
+	var fighting := bool(combat.get("active", false))
+	var fallen := bool(revive_button.get_meta("actor_fallen", false))
+	talk_send.disabled = talk_in_flight or world_key.is_empty() or player.is_empty() or fallen or fighting or talk_npc_ids.is_empty()
+	talk_picker.disabled = talk_in_flight
+	talk_line.editable = not talk_in_flight and not fallen and not fighting
+	talk_line.placeholder_text = "No one will talk in the middle of a fight." if fighting else "Say something..."
+
+
+func _converse_body(npc_id: String, line: String, actor_id: String) -> String:
+	return JSON.stringify({"npcId": npc_id, "actorId": actor_id, "line": line.strip_edges().left(TALK_MAX_LINE)})
+
+
+func _talk_reply_text(parsed: Dictionary) -> String:
+	var npc := _as_dict(parsed.get("npc", {}))
+	var text := "%s: %s" % [String(npc.get("name", "Someone")), String(parsed.get("text", ""))]
+	# A reply from the record, not the model, says so; the player should know which they are reading.
+	if String(parsed.get("source", "")) == "offline":
+		text += "\n(from the record)"
+	return text
+
+
+func _talk_error_text(response_code: int, parsed: Dictionary) -> String:
+	match response_code:
+		401:
+			return "The local world key is missing or wrong."
+		429:
+			return "Others are speaking. Try again in a moment."
+		501:
+			return "Conversation is not set up on this server."
+	return String(parsed.get("error", "They have nothing to say right now."))
+
+
+func _send_talk() -> void:
+	if talk_in_flight or world_key.is_empty():
+		return
+	var npc_id := _selected_talk_id()
+	var player := _as_dict(snapshot.get("player", null))
+	if npc_id.is_empty() or player.is_empty():
+		return
+	var headers := PackedStringArray([
+		"Accept: application/json",
+		"Content-Type: application/json",
+		"X-World-Key: " + world_key,
+	])
+	talk_in_flight = true
+	talk_reply_npc_id = npc_id
+	talk_reply.visible = true
+	talk_reply.text = "..."
+	_update_talk_controls()
+	var body := _converse_body(npc_id, talk_line.text, String(player.get("id", "")))
+	var error := talk_request.request(CONVERSE_URL, headers, HTTPClient.METHOD_POST, body)
+	if error != OK:
+		talk_in_flight = false
+		talk_reply.text = "The conversation could not start (%s)." % error
+		_update_talk_controls()
+
+
+func _on_talk_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	talk_in_flight = false
+	var parsed := _as_dict(JSON.parse_string(body.get_string_from_utf8()))
+	if result != HTTPRequest.RESULT_SUCCESS:
+		talk_reply.text = "The world engine did not answer."
+	elif response_code == 200 and String(parsed.get("contract", "")) == "world.v1" and not String(parsed.get("text", "")).is_empty():
+		_append_talk_log(_talk_reply_text(parsed))
+		talk_reply.visible = false
+		talk_reply_npc_id = ""
+		talk_line.clear()
+		# The conversation is only words until the engine records the deed.
+		_send_command("talk", {"target": String(_as_dict(parsed.get("npc", {})).get("name", ""))})
+	else:
+		talk_reply.text = _talk_error_text(response_code, parsed)
+	_update_talk_controls()
 
 
 func _load_world_key() -> void:
@@ -431,6 +679,7 @@ func _append_action(message: String, color: Color) -> void:
 func _refresh_action_controls() -> void:
 	if not is_node_ready():
 		return
+	_update_talk_controls()
 	var player_value = snapshot.get("player", null)
 	var player: Dictionary = player_value if typeof(player_value) == TYPE_DICTIONARY else {}
 	var combat_value = snapshot.get("combat", {})

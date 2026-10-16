@@ -14,6 +14,7 @@
     "client-selftest": "tsx scripts/client-selftest.ts",
     "guard-selftest": "tsx scripts/request-guard-selftest.ts",
     "automation-selftest": "tsx scripts/automation-selftest.ts",
+    "converse-integration": "tsx scripts/converse-integration.ts",
     "unattended-status": "tsx scripts/unattended-status.ts",
     "ttstest": "tsx scripts/ttstest.ts",
     "voice-audition": "tsx scripts/voice-audition.ts",

@@ -130,6 +130,7 @@ import {
   WorldCommandError,
   WORLD_COMMAND_TYPES,
 } from "./server/orion/world-command.ts";
+import { converse, ConverseError, CONVERSE_MAX_LINE } from "./server/orion/converse.ts";
 import { orionTrainingReadiness, orionTrainingSplit } from "./server/orion/training.ts";
 import { choosePetitioner, isWommper, speakPetition, voiceForMember } from "./server/orion/petitioners.ts";
 import {
@@ -371,9 +372,9 @@ async function main() {
       "Accept, Content-Type, If-None-Match, Idempotency-Key, X-World-Key",
     );
     if (req.method === "OPTIONS") return res.status(204).end();
-    const isCommand = req.method === "POST" && req.path === "/commands";
+    const isCommand = req.method === "POST" && (req.path === "/commands" || req.path === "/converse");
     if (req.method !== "GET" && !isCommand) {
-      return res.status(405).json({ error: "Only the command endpoint accepts world writes." });
+      return res.status(405).json({ error: "Only the command and converse endpoints accept world writes." });
     }
     next();
   });
@@ -385,7 +386,33 @@ async function main() {
       concurrency: "expectedRevision",
       idempotency: "command id",
       authority: "discord_runtime",
+      conversation: {
+        endpoint: "/api/world/v1/converse",
+        enabled: Boolean(loadConfig().orion.converse.projectPath),
+        maxLineLength: CONVERSE_MAX_LINE,
+      },
     });
+  });
+
+  /**
+   * Speak with a character at the player's place. Needs the same local world key
+   * as commands. It does not move anyone or record a deed; the client sends the
+   * ordinary `talk` command for that.
+   */
+  app.post("/api/world/v1/converse", async (req, res) => {
+    if (!isAuthorizedWorldCommand(req.header("X-World-Key"))) {
+      return res.status(401).json({ error: "A valid local world key is required.", code: "unauthorized" });
+    }
+    try {
+      return res.json(await converse(loadConfig(), req.body));
+    } catch (error) {
+      if (error instanceof ConverseError) {
+        const retry = error.details?.retryAfterSeconds;
+        if (typeof retry === "number") res.setHeader("Retry-After", String(retry));
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      return res.status(500).json({ error: "The conversation failed.", code: "converse_failed" });
+    }
   });
 
   app.post("/api/world/v1/commands", async (req, res) => {
