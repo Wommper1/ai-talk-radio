@@ -11,6 +11,14 @@ const PANEL_ALT := Color("#16231c")
 const BORDER := Color("#324238")
 const SUCCESS := Color("#65b987")
 const FAILURE := Color("#d16b65")
+const LORE_TIER_LABELS := {
+	"OFFICIAL_SOURCE": "Official Source",
+	"VERIFIED": "Verified",
+	"PROBABLE": "Probable",
+	"ORAL_HISTORY": "Oral History",
+	"LEGEND": "Legend",
+	"UNVERIFIED": "Unverified",
+}
 
 @onready var campaign_label: Label = %CampaignLabel
 @onready var connection_label: Label = %ConnectionLabel
@@ -225,9 +233,55 @@ func _on_location_selected(location: Dictionary) -> void:
 	for linked in location.get("connectedTo", []):
 		links.append(String(linked))
 	var route_text := ", ".join(links) if not links.is_empty() else "No mapped routes"
-	location_details.text = "%s\nRoutes: %s" % [String(location.get("description", "No description recorded.")), route_text]
+	var details := "%s\nRoutes: %s" % [String(location.get("description", "No description recorded.")), route_text]
+	var lore_text := _lore_text(location)
+	if not lore_text.is_empty():
+		details += "\n\n" + lore_text
+	location_details.text = _visit_warning(location) + details
 	location_action_state.text = "Selected destination"
 	_refresh_action_controls()
+
+
+func _lore_dictionary(location: Dictionary) -> Dictionary:
+	var lore_value = location.get("lore", null)
+	return lore_value if typeof(lore_value) == TYPE_DICTIONARY else {}
+
+
+# Real places only. In-game travel is unaffected; this is a warning about the real site.
+func _visit_warning(location: Dictionary) -> String:
+	var lore := _lore_dictionary(location)
+	if lore.is_empty() or not bool(lore.get("doNotVisit", false)):
+		return ""
+	var access := String(lore.get("accessStatus", "")).strip_edges()
+	var reason := access if not access.is_empty() else "restricted access"
+	return "DO NOT VISIT IN PERSON: %s\n\n" % reason
+
+
+func _lore_text(location: Dictionary) -> String:
+	var lore := _lore_dictionary(location)
+	if lore.is_empty():
+		return ""
+	# An unknown tier is shown as Unverified, never as something better.
+	var tier := String(lore.get("confidence", "UNVERIFIED"))
+	var record := String(LORE_TIER_LABELS.get(tier, "Unverified"))
+	var grade := String(lore.get("verificationGrade", "")).strip_edges()
+	var lines := PackedStringArray()
+	lines.append("Record: %s%s" % [record, " (%s)" % grade if not grade.is_empty() else ""])
+	var era := String(lore.get("era", "")).strip_edges()
+	var county := String(lore.get("county", "")).strip_edges()
+	var where_when := PackedStringArray()
+	if not era.is_empty():
+		where_when.append(era)
+	if not county.is_empty():
+		where_when.append(county)
+	if not where_when.is_empty():
+		lines.append(" | ".join(where_when))
+	var sources := String(lore.get("sources", "")).strip_edges()
+	lines.append("Sources: %s" % (sources if not sources.is_empty() else "none recorded"))
+	var access := String(lore.get("accessStatus", "")).strip_edges()
+	if not access.is_empty():
+		lines.append("Access: %s" % access)
+	return "\n".join(lines)
 
 
 func _render_combat(player: Dictionary, party: Array, quests: Array) -> void:

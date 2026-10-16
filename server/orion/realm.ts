@@ -118,12 +118,50 @@ export interface RealmNpc {
   disposition: string;
 }
 
+/** How far a place's recorded history can be trusted, strongest first. */
+export const LORE_CONFIDENCE_TIERS = [
+  "OFFICIAL_SOURCE",
+  "VERIFIED",
+  "PROBABLE",
+  "ORAL_HISTORY",
+  "LEGEND",
+  "UNVERIFIED",
+] as const;
+export type LoreConfidence = (typeof LORE_CONFIDENCE_TIERS)[number];
+
+/**
+ * Provenance for a place taken from a real-world lore pack.
+ *
+ * Folklore text is deliberately not here. A place's `description` is verified
+ * history only, and it is what reaches the radio hosts' briefing; carrying the
+ * legend layer in the same object would make it one careless line away from
+ * being read out as fact. A client that wants to show folklore needs its own
+ * labelled field in a later contract revision.
+ */
+export interface LocationLore {
+  siteId: string;
+  confidence: LoreConfidence;
+  verificationGrade: string;
+  county: string;
+  era: string;
+  category: string;
+  sources: string;
+  sourceNotes: string;
+  accessStatus: string;
+  /** True when visiting in person is unsafe or not allowed; clients must say so. */
+  doNotVisit: boolean;
+  latitude: number | null;
+  longitude: number | null;
+}
+
 export interface RealmLocation {
   id: string;
   name: string;
   type: string;
   description: string;
   connectedTo: string[];
+  /** Null for a place that is pure fiction or from a database without lore columns. */
+  lore: LocationLore | null;
 }
 
 export interface Realm {
@@ -362,6 +400,54 @@ function jsonList(value: unknown): string[] {
 }
 
 /**
+ * Fail closed: a missing or unrecognised value is UNVERIFIED, never a better
+ * tier. Mirrors `ConfidenceLevel.fromString` in the lore app and `parse_confidence`
+ * in the lore importer, so all three agree on what a bad value means.
+ */
+export function parseLoreConfidence(value: unknown): LoreConfidence {
+  const text = String(value ?? "").trim().toUpperCase().replace(/ /g, "_");
+  if (!text) return "UNVERIFIED";
+  if ((LORE_CONFIDENCE_TIERS as readonly string[]).includes(text)) return text as LoreConfidence;
+  if (text.includes("OFFICIAL")) return "OFFICIAL_SOURCE";
+  if (text.includes("VERIF") && !text.includes("UNVERIF")) return "VERIFIED";
+  if (text.includes("PROBAB")) return "PROBABLE";
+  if (text.includes("ORAL")) return "ORAL_HISTORY";
+  if (text.includes("LEGEND") || text.includes("FOLK")) return "LEGEND";
+  return "UNVERIFIED";
+}
+
+/**
+ * The lore columns of a `locations` row, or null when the row has none (a
+ * fictional place, or a database written before the lore importer existed).
+ * Never reads the folklore column; see `LocationLore`.
+ */
+function readLocationLore(row: Record<string, unknown>): LocationLore | null {
+  const siteId = String(row.lore_site_id ?? "").trim();
+  if (!siteId) return null;
+  const text = (value: unknown): string => String(value ?? "").trim();
+  const coordinate = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  return {
+    siteId,
+    confidence: parseLoreConfidence(row.confidence_level),
+    verificationGrade: text(row.verification_grade),
+    county: text(row.county),
+    era: text(row.era),
+    category: text(row.category),
+    sources: text(row.sources),
+    sourceNotes: text(row.source_notes),
+    accessStatus: text(row.access_status),
+    // A warning flag fails toward warning: only a clean 0 (or no value) means "safe".
+    doNotVisit: Number(row.do_not_visit ?? 0) !== 0,
+    latitude: coordinate(row.latitude),
+    longitude: coordinate(row.longitude),
+  };
+}
+
+/**
  * Read the chronicle.
  *
  * Read-only and untouched by any write: the game may well be running, and a
@@ -470,6 +556,7 @@ export function readRealm(configured: string, eventLimit = 40): Realm {
       type: String(r.type ?? "unknown").trim(),
       description: String(r.description ?? "").trim(),
       connectedTo: jsonList(r.connected_to),
+      lore: readLocationLore(r),
     }));
 
     if (realm.campaignId) {
