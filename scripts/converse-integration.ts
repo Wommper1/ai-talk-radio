@@ -276,10 +276,13 @@ async function run() {
   const spoken = await sayTo("npc_culbertson_docent", line);
   const [call] = takeModelCalls();
   check("a model reply that follows the rules is shown as the model's", spoken.status === 200 && spoken.json?.source === "model" && spoken.json?.text === "It was raised in 1901 by a travelling joiner.", JSON.stringify(spoken.json));
-  const system = call?.messages?.[0]?.content ?? "";
-  check("the model was sent the place's verified history and its record strength", system.includes(MANSION.facts) && system.includes("Record strength: Official Source"));
-  check("the docent, who knows the legend, was given it as an attributed legend", system.includes(MANSION.legend) && system.includes("always attribute it"));
-  check("the traveller's words went only in the user message", call?.messages?.[1]?.role === "user" && call.messages[1].content === line && !system.includes("XYZZY-line"));
+  // The layout is the Realm project's (realm/narration.py build_messages): a short system message and a
+  // greeting exchange, then the record, the rules and the traveller's words together in the final user message.
+  const messages = call?.messages ?? [];
+  const briefing = messages.at(-1)?.content ?? "";
+  check("the model was sent the place's verified history and its record strength", briefing.includes(MANSION.facts) && briefing.includes("Record strength: Official Source"));
+  check("the docent, who knows the legend, was given it as an attributed legend", briefing.includes(MANSION.legend) && briefing.includes("always attribute it"));
+  check("the traveller's words went only in the user message", messages.at(-1)?.role === "user" && briefing.includes(`The traveller says: ${line}`) && !messages.slice(0, -1).some((message) => message.content.includes("XYZZY-line")));
   check("the configured model name was passed along", call?.model === "test-model");
 
   // ---- a reply that breaks the rules never reaches the traveller
@@ -351,7 +354,7 @@ async function run() {
   await sayTo("npc_culbertson_docent", "And again?");
   const [followUp] = takeModelCalls();
   check("the next prompt carries the memory as a note, not an instruction",
-    String(followUp?.messages?.[0]?.content).includes("NOTES ABOUT THIS TRAVELLER") && String(followUp.messages[0].content).includes("Spoke with Ashra."));
+    String(followUp?.messages?.at(-1)?.content).includes("NOTES ABOUT THIS TRAVELLER") && String(followUp.messages.at(-1)?.content).includes("Spoke with Ashra."));
 }
 
 try {
