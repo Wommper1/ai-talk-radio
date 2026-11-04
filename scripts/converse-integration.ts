@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PROJECT = (process.env.REALM_PROJECT_PATH ?? "~/SouthernIndianaRealm").replace(/\\/g, "/");
+const PROJECT = (process.env.REALM_PROJECT_PATH?.trim() || path.join(os.homedir(), "SouthernIndianaRealm")).replace(/\\/g, "/");
 const PYTHON = process.env.REALM_PYTHON?.trim() || "python";
 
 function skip(reason: string): never {
