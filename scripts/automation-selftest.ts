@@ -226,7 +226,7 @@ try {
   // Only ever delete the folder this run created.
   if (sandbox.toLowerCase().startsWith(fs.realpathSync.native(os.tmpdir()).toLowerCase() + path.sep) &&
       path.basename(sandbox).startsWith("talk-radio-automation-")) {
-    fs.rmSync(sandbox, { recursive: true, force: true });
+    fs.rmSync(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 
