@@ -5,7 +5,16 @@ import { backup, DatabaseSync } from "node:sqlite";
 
 import { executeWorldCommand, WorldCommandError, type WorldCommandType } from "../server/orion/world-command.ts";
 
-const SOURCE = process.env.REALM_ROOT || "C:/Wommper1/AlexAIHub/projects/king_orions_realm";
+function requireRealmRoot(): string {
+  const root = process.env.REALM_ROOT?.trim();
+  if (!root) {
+    console.error("Set REALM_ROOT to the realm project folder (the one with world.db in it), e.g. in .env.");
+    process.exit(1);
+  }
+  return root;
+}
+
+const SOURCE = requireRealmRoot();
 const MODULES = ["combat_engine.py", "items.py", "party_manager.py", "quest_log.py", "world_rules.py", "world_db.py"];
 
 function readRuntime(dbPath: string) {
