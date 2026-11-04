@@ -21,8 +21,8 @@ and the October 6 operator-gate record were added on October 6, 2026.
   configuration as context.
 - [x] A partially stocked commercial bucket supplies every complete break it
   can; only missing breaks are written live.
-- [x] The launcher identifies this app before stopping a process and moves to
-  a free port when another program owns port 3000.
+- [x] The launcher leaves a running station alone so it cannot interrupt a
+  show, and moves to a free port when another program owns port 3000.
 - [x] The masthead model light reflects actual LM Studio reachability.
 - [x] Destructive storage, draft, shelf, and reset actions ask first; settings
   failures are visible.
@@ -77,11 +77,12 @@ masters remain in their matching folders under `shows/`.
   human-approved keeper lines and a commercially suitable base-model license;
   there are not yet enough reviewed lines.
 
-## Unattended operation — implemented, not yet certified
+## Unattended operation — scheduled production certified; live playout pending
 
-Scheduled production and automatic playout are **off by default**. Implementation
-and certification are recorded separately: the code below exists and its failure
-paths have run for real, but no scheduled show has ever finished.
+Scheduled production and automatic playout are **off by default in a fresh
+configuration**. This station's saved settings are described below: automation
+is enabled globally, but the certification slot is disabled. The October 15
+scheduled show finished; a live playout/fallback transition is still unverified.
 
 **Implemented** (`server/station/automation.ts`, `shared/station-automation.ts`,
 the Operations tab):
@@ -106,7 +107,8 @@ the Operations tab):
 - **Single owner.** One server process holds the scheduler through
   `data/station-automation.lock`.
 
-**Evidence so far** (from `data/station-automation.json`, September 27–28):
+**Early failure-path evidence** (from `data/station-automation.json`,
+September 27–28; superseded for production certification on October 15):
 
 - The scheduler fired the "24-turn station certification" slot, ran the
   preflight, and failed because the DJ model was not loaded, then because LM
@@ -115,8 +117,9 @@ the Operations tab):
 - One backup-and-restore round trip worked and created its safety backup first.
 - The health monitor logged real transitions: model not loaded, LM Studio
   unreachable, and the commercial-rotation shortfall.
-- **No scheduled production has ever completed.** Playout and fallback have
-  never run: the queue and play history are empty.
+- At this earlier checkpoint, no scheduled production had completed and the
+  queue and play history were empty. The October 15 certification later queued
+  a finished show; live playout/fallback evidence is still open.
 
 **Automated coverage.** `npm run selftest` covers slot timing, once-per-day
 firing, id safety, turn bounds, and the retry budget. `npm run
@@ -147,14 +150,15 @@ single-owner lock; they need a running station server and a loaded model.
 - Edge speech needs internet access, so an unattended show fails while offline.
   Piper is the offline fallback.
 
-**Certification still open.**
+**Certification and remaining live gates (updated October 21, 2026).**
 
-- [ ] A scheduled (not manually started) 24-turn Produced show completes
-  unattended with the intended model: every host turn voiced, four commercial
-  breaks, mastered, and queued for playout. The October 6 PC project audit
-  records an earlier attempt interrupted because the loaded Qwen 3.5 9B was too
-  slow for 6 GB of VRAM; restore the proven 8B Stheno model or choose another
-  that meets the latency target.
+- [x] A scheduled (not manually started) 24-turn Produced show completed
+  unattended with Stheno and local SAPI on October 15: 24 voiced host turns,
+  four breaks, a 1,439.327-second master, and queued show
+  `2026-10-15-phones-at-dinner-tables-to-ban-or-not-2be5e8`.
+  `npm run unattended-status` reports `CERTIFIED`; the saved automation events
+  record the finish and queue insertion. The earlier October 6 Qwen 3.5 9B
+  attempt was interrupted and is historical, not the current certification.
 - [ ] Playout plays a queued show, then falls back correctly with the intended
   model unavailable. The queue and fallback rules are covered offline
   (`automation-selftest`); what is open is seeing it happen in a live run.
@@ -164,10 +168,11 @@ single-owner lock; they need a running station server and a loaded model.
 - [ ] Decide whether scheduled production is a launch requirement or stays an
   optional feature. Until decided it is not counted as a launch blocker.
 
-**Operational note.** The saved slot "24-turn station certification" (Sundays,
-20:00) is still enabled and automation is switched on. If the station server is
-running on a Sunday evening, it will start a full 24-turn production by itself,
-using whichever model is loaded in LM Studio.
+**Operational note (checked October 21).** Automation is enabled globally, but
+the saved "24-turn station certification" slot has `enabled: false` in
+`data/station-automation.json` after the successful run. It will not start
+another certification show at its old Sunday time unless someone re-enables
+that slot. Other enabled slots, if added later, must be evaluated separately.
 
 ## Optional wish list (not launch blockers)
 
@@ -176,8 +181,9 @@ using whichever model is loaded in LM Studio.
 - [x] Add an A/B voice audition panel for Andrew, Brian, Emma, and Ava before
   changing the permanent cast.
 - [x] Add scheduled unattended recording after the station has completed a
-  few supervised full-show burn-in runs. Implemented September 27; **not yet
-  certified**, see "Unattended operation" above.
+  few supervised full-show burn-in runs. Implemented September 27; the
+  scheduled 24-turn certification passed October 15. Separate live gates
+  remain open above.
 - [ ] Add a second fully local premium neural voice engine when a model that
   fits beside the 8B DJ on 6 GB VRAM meets the station's quality bar.
 - [ ] Collect and label 500 keeper lines before revisiting DJ fine-tuning.
@@ -221,3 +227,16 @@ run.
 
 The gate is therefore **not** fully re-passed. Re-run the last two with the
 intended model loaded before calling this release state certified.
+
+### Verification addendum — October 21, 2026
+
+The source-backed status command now reports `CERTIFIED` for the completed
+scheduled show `2026-10-15-phones-at-dinner-tables-to-ban-or-not-2be5e8`.
+That is evidence that the scheduled production run completed; it does not by
+itself close the separate live playout/fallback and model-dependent smoke-test
+gates above. On October 21, `npm run typecheck`, `npm run selftest`, and
+`npm run automation-selftest` passed. `npm run doctor` could not reach LM
+Studio and found no SAPI voices in that session, so `dialogue-smoke` and
+`phase-smoke` were intentionally not run. Keep those two smoke tests and the
+live playout/fallback observation open until they are run with the intended
+model and speech configuration.
