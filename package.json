@@ -10,7 +10,7 @@
     "serve": "cross-env NODE_ENV=production tsx server.ts",
     "typecheck": "tsc --noEmit",
     "doctor": "tsx scripts/doctor.ts",
-    "selftest": "tsx scripts/selftest.ts",
+    "selftest": "node scripts/selftest-runner.mjs",
     "client-selftest": "tsx scripts/client-selftest.ts",
     "guard-selftest": "tsx scripts/request-guard-selftest.ts",
     "automation-selftest": "tsx scripts/automation-selftest.ts",
