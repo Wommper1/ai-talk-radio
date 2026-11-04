@@ -2,6 +2,7 @@
   "name": "local-talk-radio",
   "private": true,
   "version": "1.0.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "cross-env ENABLE_HMR=false tsx watch --clear-screen=false --ignore \"**/config.json\" --ignore \"**/shows/**\" --ignore \"**/output/**\" --ignore \"**/commercials/**\" --ignore \"**/memory/**\" --ignore \"**/ads/**\" --ignore \"**/music/**\" --ignore \"**/dist/**\" --ignore \"**/tools/**\" server.ts",
