@@ -8,7 +8,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-REALM = Path(os.environ.get("REALM_ROOT", "C:/Wommper1/AlexAIHub/projects/king_orions_realm"))
+_realm_root = os.environ.get("REALM_ROOT", "").strip()
+if not _realm_root:
+    sys.exit("Set REALM_ROOT to the realm project folder (the one with world_db.py and party_manager.py in it).")
+REALM = Path(_realm_root)
 sys.path.insert(0, str(ROOT / "integrations" / "discord-sync"))
 sys.path.insert(1, str(REALM))
 

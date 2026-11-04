@@ -201,14 +201,20 @@ export const EMPTY_REALM: Realm = {
 
 /* ── Finding it ──────────────────────────────────────────────────── */
 
-/** Where the game lives when nothing else is configured. */
-const KNOWN_REALM = "C:/Wommper1/AlexAIHub/projects/king_orions_realm";
+/**
+ * Where the game lives when the Settings field is empty: the folder named by
+ * the REALM_ROOT environment variable (set it in .env), or nowhere.
+ */
+function defaultRealm(): string | null {
+  const fromEnv = process.env.REALM_ROOT?.trim();
+  return fromEnv ? fromEnv : null;
+}
 
 /**
  * The game folder, or null.
  *
- * A configured path wins. Failing that, the one place it is known to live is
- * tried, so the common case needs no setup at all.
+ * A configured path wins. Failing that, the REALM_ROOT folder is tried, so a
+ * machine with it set in .env needs no setup in Settings.
  */
 export function resolveRealm(configured: string): string | null {
   const asked = configured.trim();
@@ -217,8 +223,9 @@ export function resolveRealm(configured: string): string | null {
   // returns nothing and says so, rather than falling back to the known
   // location — because the case that matters is pointing at a copy to test
   // against, mistyping it, and silently writing to the real save instead.
-  // Only an empty setting means "look where it usually is".
-  const candidates = asked ? [asked] : [KNOWN_REALM];
+  // Only an empty setting means "use REALM_ROOT, if it is set".
+  const fallback = defaultRealm();
+  const candidates = asked ? [asked] : fallback ? [fallback] : [];
 
   for (const candidate of candidates) {
     try {

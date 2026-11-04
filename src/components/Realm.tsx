@@ -120,12 +120,12 @@ export function Realm({ config, onChange, running, onHoldCourt, onCancel }: Prop
               <>
                 <Field
                   label="The realm folder"
-                  hint="The game's own folder — the one with world.db in it. Left empty, the usual place is tried."
+                  hint="The game's own folder — the one with world.db in it. Left empty, the REALM_ROOT setting from .env is tried."
                 >
                   <Input
                     value={orion.realmPath}
                     onChange={(e) => update({ realmPath: e.target.value })}
-                    placeholder="C:\\Wommper1\\AlexAIHub\\projects\\king_orions_realm"
+                    placeholder="C:\\path\\to\\king_orions_realm"
                     spellCheck={false}
                   />
                 </Field>
