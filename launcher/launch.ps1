@@ -13,6 +13,16 @@ $port = 3000
 $url = "http://localhost:$port"
 $server = $null
 
+# Select a modern browser explicitly. Never hand the URL to Windows' default
+# association, which may point at an unsuitable browser on this PC.
+$browser = @(
+    (Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Google\Chrome\Application\chrome.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Google\Chrome\Application\chrome.exe'),
+    (Join-Path $env:ProgramFiles 'Microsoft\Edge\Application\msedge.exe'),
+    (Join-Path ${env:ProgramFiles(x86)} 'Microsoft\Edge\Application\msedge.exe')
+) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+
 function Test-Health {
     param([string]$Base)
     try {
@@ -35,6 +45,14 @@ Write-Host "  Local Talk Radio" -ForegroundColor Yellow
 Write-Host "  ----------------" -ForegroundColor DarkGray
 Write-Host ""
 
+if (-not $browser) {
+    Write-Host "  Google Chrome and Microsoft Edge were not found." -ForegroundColor Red
+    Write-Host "  Install Chrome (preferred) or Edge, then open the radio again." -ForegroundColor Red
+    Read-Host "`n  Press Enter to close"
+    exit 1
+}
+Write-Step "Browser: $(Split-Path -Leaf $browser)"
+
 # ── Node present? ────────────────────────────────────────────────────
 try {
     $nodeVersion = (& node --version) 2>$null
@@ -53,12 +71,14 @@ try {
 $modules = Join-Path $root 'node_modules'
 $pkg = Join-Path $root 'package.json'
 $stamp = Join-Path $modules '.install-stamp'
+$lock = Join-Path $root 'package-lock.json'
+$tsx = Join-Path $modules '.bin\tsx.cmd'
 
 $needsInstall = $false
-if (-not (Test-Path $modules)) {
+if (-not (Test-Path $modules) -or -not (Test-Path $tsx)) {
     $needsInstall = $true
     Write-Step "Installing dependencies (first run, this takes a minute)..."
-} elseif (-not (Test-Path $stamp) -or (Get-Item $pkg).LastWriteTimeUtc -gt (Get-Item $stamp).LastWriteTimeUtc) {
+} elseif (-not (Test-Path $stamp) -or (Get-Item $pkg).LastWriteTimeUtc -gt (Get-Item $stamp).LastWriteTimeUtc -or (Get-Item $lock).LastWriteTimeUtc -gt (Get-Item $stamp).LastWriteTimeUtc) {
     $needsInstall = $true
     Write-Step "Dependencies changed - updating..."
 }
@@ -78,26 +98,16 @@ if ($needsInstall) {
 $env:NODE_ENV = 'development'
 $env:ENABLE_HMR = 'false'
 
-# Search the whole range. The station may have moved to 3001 on the previous
-# launch because another program owned 3000; find and restart that exact app.
-# An unrelated listener is never stopped merely because it answers /api/health.
+# Search the whole range. An existing station could be producing a show, so
+# leave it running and ask the operator to close it before loading current code.
 $selected = $false
 foreach ($candidate in 3000..3010) {
     $candidateUrl = "http://localhost:$candidate"
     if (Test-Health $candidateUrl) {
-        Write-Step "An older station instance is running on $candidate - restarting it on the latest code..."
-        $existing = Get-NetTCPConnection -LocalPort $candidate -State Listen -ErrorAction SilentlyContinue
-        foreach ($conn in $existing) {
-            try { Stop-Process -Id $conn.OwningProcess -Force -ErrorAction SilentlyContinue } catch { }
-        }
-        for ($i = 0; $i -lt 20; $i++) {
-            if (-not (Get-NetTCPConnection -LocalPort $candidate -State Listen -ErrorAction SilentlyContinue)) { break }
-            Start-Sleep -Milliseconds 250
-        }
-        $port = $candidate
-        $url = $candidateUrl
-        $selected = $true
-        break
+        Write-Host "  Local Talk Radio is already running on port $candidate." -ForegroundColor Yellow
+        Write-Host "  Close its server window when the current show finishes, then open this shortcut again for the latest local code." -ForegroundColor Yellow
+        Read-Host "`n  Press Enter to close"
+        exit 0
     }
 
     if (-not (Get-NetTCPConnection -LocalPort $candidate -State Listen -ErrorAction SilentlyContinue)) {
@@ -173,7 +183,7 @@ if ($ready) {
     Write-Host "  Ready at $url" -ForegroundColor Green
     Write-Host "  Close this window to stop the app." -ForegroundColor DarkGray
     Write-Host ""
-    Start-Process $url
+    Start-Process -FilePath $browser -ArgumentList "--app=$url"
 } else {
     Write-Host ""
     Write-Host "  The server did not start. Its output is below." -ForegroundColor Red

@@ -14,7 +14,7 @@ Microsoft's online speech service but still save every result only on this PC.
 Double-click **Local Talk Radio** on the Desktop. That starts the server, waits
 for it, and opens the browser. Closing that window stops the app.
 
-To recreate the shortcut (after moving the folder, say):
+To create the desktop shortcut for this checkout:
 
 ```bash
 npm run shortcut
@@ -761,7 +761,7 @@ image model.
 | `npm run memory` | Rebuild the cross-show memory index from the command line |
 | `npm run adtest` | Render an opener, a commercial break and a demo show, no model needed |
 | `npm run setup-piper` | Download the Piper engine and voices                |
-| `npm run shortcut` | Recreate the Desktop shortcut                          |
+| `npm run shortcut` | Create the Desktop shortcut                            |
 | `npm run typecheck`| TypeScript, no emit                                    |
 | `npm run build`    | Build the frontend                                     |
 | `npm run serve`    | Serve the built frontend                               |
@@ -781,12 +781,12 @@ show id, so a given show always sounds the same and nothing is ever downloaded.
 
 ## Notes
 
-- The Desktop shortcut runs the server from TypeScript source in watch mode, so
-  it always picks up the latest code; it reinstalls dependencies only when
-  `package.json` changes. If the app is already running, that instance is
-  already watching the source and is up to date.
-- After a code change, reload the browser tab — an open page keeps the old
-  JavaScript until it is refreshed.
+- The Desktop shortcut runs the current local TypeScript source and opens it
+  explicitly in Chrome, or Edge if Chrome is unavailable. It checks Node and
+  installs missing or changed dependencies. Start your local model server
+  yourself before generating a show.
+- An open station is left running so a show is not interrupted. Close its server
+  window after the show finishes, then use the shortcut again to load new code.
 - The server binds to `127.0.0.1` only — it is not reachable from your network.
 - A loopback bind does not stop a web page you visit, so the server also refuses any request whose `Host` is not
   `localhost`, `127.0.0.1` or `[::1]` (DNS rebinding), and refuses a change (POST, PUT, DELETE) that a browser labels as coming
