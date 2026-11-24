@@ -217,7 +217,7 @@ try {
 
   console.log("\n─── not covered here ───\n");
   console.log("  The scheduler's live production run, the five-minute health monitor and the single-owner lock need a running");
-  console.log("  station server and a loaded model; they stay on the certification list in docs/STATION_READINESS.md.");
+  console.log("  station server and a loaded model; they stay on the certification list in docs/history/STATION_READINESS.md.");
 } catch (error) {
   failures++;
   console.log(`[ FAIL ] unexpected error — ${(error as Error).message}`);

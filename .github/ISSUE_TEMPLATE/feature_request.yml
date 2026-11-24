@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an idea for the station.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would it let you do?
+      description: Describe the show or situation you have in mind, not just the feature.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How might it work?
+  - type: checkboxes
+    id: local
+    attributes:
+      label: Local first
+      options:
+        - label: This works without an account, API key or cloud service (or is optional and off by default).

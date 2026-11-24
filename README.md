@@ -30,7 +30,7 @@ you make leaves your PC.
 
 | | |
 | --- | --- |
-| **Node.js** | 22.5 or newer (24 recommended) |
+| **Node.js** | 22.13 or newer (24 recommended) |
 | **A local model server** | [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.com), or anything with an OpenAI-compatible API |
 | **A model** | A plain instruct model, about 8B (for example Qwen, Gemma or Mistral). 6 GB of VRAM is enough |
 | **Speech** (pick one) | Piper (offline, downloaded by a script), Edge TTS (best quality, needs Python and an internet connection), or Windows SAPI |
@@ -99,8 +99,8 @@ that starts the server and opens the browser in one step.
 - **[The full guide](docs/GUIDE.md)** covers how a show is built, ad breaks,
   openers, the hosts, the showrunner, memory, providers, every setting and
   every command.
-- [Station readiness](docs/STATION_READINESS.md) records the burn-in and
-  certification results.
+- [Development history](docs/history/) holds the burn-in and certification
+  logs from the reference machine (GTX 1660, 6 GB VRAM, 32 GB RAM).
 - [King Orion's Realm](docs/REALM.md) is an optional integration with a
   separate game project. You do not need it to run the station.
 
@@ -131,6 +131,10 @@ The Edge voices use Microsoft's online read-aloud service through the
 community [`edge-tts`](https://github.com/rany2/edge-tts) package. It is not an
 official, supported API, and it may change or stop working. If you need speech
 that is fully offline or free of third-party terms, use Piper.
+
+## Contributing
+
+Bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
