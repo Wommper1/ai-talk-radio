@@ -51,6 +51,7 @@ import {
 import { CURRENT_AD_LIBRARY_FORMAT, pickForReuse } from "../server/pipeline/adlibrary.ts";
 import { matchAdLoudness, type Placed } from "../server/pipeline/produce.ts";
 import { normalizeConfig, DEFAULT_CONFIG } from "../server/config.ts";
+import { DEFAULT_PIPER_VOICES, isPiperVoiceName } from "../server/setup/piper.ts";
 import { duck, applyTone, compress, limit } from "../server/audio/effects.ts";
 import { analyseLoudness, masterStereo } from "../server/audio/loudness.ts";
 import {
@@ -972,6 +973,23 @@ check("plain speech is never caught", leansOnSimile("Greyditch is empty. Forty m
 // The Guild chiming in is a feature, not a fact of the format, and it has to
 // be switchable without touching memory.
 check("the Guild speaks by default", DEFAULT_CONFIG.orion.guildVoices === true);
+
+// First-run voices: the download must cover every Piper voice the default station speaks with,
+// or a fresh install has a host who goes silent.
+{
+  const needed = [
+    ...DEFAULT_CONFIG.hosts.map((h) => h.voices.piper),
+    DEFAULT_CONFIG.caller.voices.piper,
+    DEFAULT_CONFIG.ads.announcer.voices.piper,
+  ].map((v) => v.replace(/\.onnx$/, ""));
+  const missing = needed.filter((v) => !DEFAULT_PIPER_VOICES.includes(v));
+  check("setup downloads every default Piper voice", missing.length === 0, missing.join(", "));
+  check("Piper voice names are validated", isPiperVoiceName("en_US-ryan-high") && isPiperVoiceName("en_US-hfc_female-medium"));
+  check(
+    "unsafe Piper voice names are refused",
+    !isPiperVoiceName("../../etc/passwd") && !isPiperVoiceName("en_US-ryan-high/../x") && !isPiperVoiceName(""),
+  );
+}
 check(
   "and can be switched off",
   normalizeConfig({ orion: { guildVoices: false } }).orion.guildVoices === false,
