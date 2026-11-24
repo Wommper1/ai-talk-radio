@@ -530,7 +530,7 @@ appended to both hosts' prompts.
 | OpenAI-compatible | `http://127.0.0.1:8080/v1`     | llama.cpp, vLLM, koboldcpp, …  |
 | Gemini            | cloud                          | Off by default; needs a key    |
 
-**Speech** — all local and free:
+**Speech** — all free; every engine except Edge runs fully offline:
 
 | Engine         | Quality | Offline | Setup                                     |
 | -------------- | ------- | ------- | ----------------------------------------- |

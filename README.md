@@ -5,8 +5,9 @@ finished radio show, with voices, music beds, station idents, commercial breaks
 and a timecoded transcript.
 
 The language model, the production pipeline, your shows and the station's
-memory all run on your own machine. No account, no subscription, and nothing
-you make leaves your PC.
+memory all run on your own machine. There is no account and no subscription.
+With Piper voices, nothing you make leaves your PC; the optional Edge voices
+send each line's text to Microsoft to be spoken.
 
 <!-- TODO: add a screenshot of the Studio and a 30-second sample clip here. -->
 
@@ -131,6 +132,27 @@ The Edge voices use Microsoft's online read-aloud service through the
 community [`edge-tts`](https://github.com/rany2/edge-tts) package. It is not an
 official, supported API, and it may change or stop working. If you need speech
 that is fully offline or free of third-party terms, use Piper.
+
+## Third-party licenses
+
+This repository contains only its own code, under the MIT license. Everything
+below is downloaded on your machine when you install or set up the station, and
+stays under its own license:
+
+| Component | License | Notes |
+| --- | --- | --- |
+| npm dependencies | MIT, ISC, BSD, Apache-2.0, MPL-2.0 (build tool only) | Installed by `npm install` |
+| [`mpg123-decoder`](https://www.npmjs.com/package/mpg123-decoder) | MIT wrapper around mpg123 (LGPL-2.1) | Decodes Edge MP3s |
+| [Piper](https://github.com/rhasspy/piper) engine | MIT | Downloaded by `npm run setup-piper` |
+| Piper voices | **Varies by voice** | See below |
+| [`edge-tts`](https://github.com/rany2/edge-tts) | LGPL-3.0 | Installed into `tools/edge-tts`; the Microsoft service has its own terms |
+| Fonts (Inter, Instrument Serif, JetBrains Mono) | SIL Open Font License | Loaded from Google Fonts by the browser |
+
+**Piper voice licenses differ, and some datasets do not allow commercial use.**
+The station only plays voices on your own machine, but if you publish or sell
+shows, check the `MODEL_CARD` for each voice you use in
+[rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices). The
+defaults are `en_US-ryan-high` and `en_US-amy-medium`.
 
 ## Contributing
 
