@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "dev": "cross-env ENABLE_HMR=false tsx watch --clear-screen=false --ignore \"**/config.json\" --ignore \"**/shows/**\" --ignore \"**/output/**\" --ignore \"**/commercials/**\" --ignore \"**/memory/**\" --ignore \"**/ads/**\" --ignore \"**/music/**\" --ignore \"**/dist/**\" --ignore \"**/tools/**\" server.ts",
     "start": "tsx server.ts",
