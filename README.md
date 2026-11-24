@@ -116,6 +116,12 @@ that starts the server and opens the browser in one step.
 
 ## Documentation
 
+- **[Getting started](docs/guides/GETTING_STARTED.md)**: from nothing to your
+  first show, step by step, no technical knowledge needed.
+- **[How to…](docs/guides/HOW_TO.md)**: short recipes for call-ins, deep dives,
+  sponsors, songs, voices, speed and more.
+- **[Troubleshooting](docs/guides/TROUBLESHOOTING.md)**: what to do when
+  something is not working.
 - **[The full guide](docs/GUIDE.md)** covers how a show is built, ad breaks,
   openers, the hosts, the showrunner, memory, providers, every setting and
   every command.

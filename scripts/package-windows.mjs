@@ -85,6 +85,7 @@ copy("scripts/world_command_bridge.py");
 copy("LICENSE", "LICENSE.txt");
 copy("README.md");
 copy("docs/GUIDE.md", "docs/GUIDE.md");
+copy("docs/guides", "docs/guides");
 copy("docs/REALM.md", "docs/REALM.md");
 copy("docs/WORLD_API_V1.md", "docs/WORLD_API_V1.md");
 copy(".env.example");
@@ -161,6 +162,9 @@ This download is not code-signed.
 Optional: "Set up Edge voices" installs Microsoft's more natural online voices.
 It needs Python from https://www.python.org.
 
+Step-by-step help: docs/guides/GETTING_STARTED.md
+How to do things:  docs/guides/HOW_TO.md
+If something goes wrong: docs/guides/TROUBLESHOOTING.md
 Full guide: docs/GUIDE.md
 Source code and help: https://github.com/Wommper1/ai-talk-radio
 `),
