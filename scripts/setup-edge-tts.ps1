@@ -7,7 +7,7 @@ $python = Join-Path $venv 'Scripts\python.exe'
 if (-not (Test-Path $python)) {
     $launcher = Get-Command py.exe -ErrorAction SilentlyContinue
     if ($null -eq $launcher) {
-        throw 'Python launcher not found. Install Python from python.org, then run npm run setup-edge-tts again.'
+        throw 'Python was not found. Install Python 3 from https://www.python.org, then run this setup again.'
     }
     Write-Host 'Creating the station voice environment...'
     & $launcher.Source -3 -m venv $venv
@@ -23,4 +23,4 @@ Write-Host 'Checking available voices...'
 if ($LASTEXITCODE -ne 0) { throw 'edge-tts installed but could not contact the voice service.' }
 
 Write-Host ''
-Write-Host 'Edge TTS is ready. Run npm run doctor for the complete station check.' -ForegroundColor Green
+Write-Host 'Edge voices are ready. In the station, press Check again on the setup screen, or choose Edge under Settings.' -ForegroundColor Green

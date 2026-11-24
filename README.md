@@ -31,13 +31,32 @@ send each line's text to Microsoft to be spoken.
 
 | | |
 | --- | --- |
-| **Node.js** | 22.13 or newer (24 recommended) |
+| **Node.js** | 22.13 or newer (24 recommended). Not needed for the Windows download, which includes it |
 | **A local model server** | [LM Studio](https://lmstudio.ai), [Ollama](https://ollama.com), or anything with an OpenAI-compatible API |
 | **A model** | A plain instruct model, about 8B (for example Qwen, Gemma or Mistral). 6 GB of VRAM is enough |
 | **Speech** (pick one) | Piper (offline, downloaded by a script), Edge TTS (best quality, needs Python and an internet connection), or Windows SAPI |
 | **OS** | Developed and tested on Windows. The server and tests also run on Linux; macOS is untested |
 
 ## Quick start
+
+### Windows: download and double-click
+
+No Node.js, no terminal. Everything the station needs is inside the zip.
+
+1. Download **`LocalTalkRadio-…-windows-x64.zip`** from the
+   [latest release](https://github.com/Wommper1/ai-talk-radio/releases/latest).
+2. Right-click it → **Extract All**, into a folder you can write to, such as
+   Documents. Your shows and settings are saved inside that folder.
+3. Install [LM Studio](https://lmstudio.ai), download a model (for example
+   *Qwen2.5 7B Instruct*), then on its **Developer** tab load it and press
+   **Start Server**.
+4. Double-click **Start Local Talk Radio**. The setup screen opens in your
+   browser, finds LM Studio and offers to download voices.
+
+The download is not code-signed, so Windows may say it protected your PC.
+Choose **More info → Run anyway**.
+
+### From source (Windows, macOS, Linux)
 
 1. Get the code and install dependencies:
 
@@ -137,7 +156,8 @@ that is fully offline or free of third-party terms, use Piper.
 
 This repository contains only its own code, under the MIT license. Everything
 below is downloaded on your machine when you install or set up the station, and
-stays under its own license:
+stays under its own license. The Windows download bundles the npm packages and
+Node.js, and lists every license in `THIRD-PARTY-NOTICES.txt`:
 
 | Component | License | Notes |
 | --- | --- | --- |
@@ -146,6 +166,7 @@ stays under its own license:
 | [Piper](https://github.com/rhasspy/piper) engine | MIT | Downloaded by `npm run setup-piper` |
 | Piper voices | **Varies by voice** | See below |
 | [`edge-tts`](https://github.com/rany2/edge-tts) | LGPL-3.0 | Installed into `tools/edge-tts`; the Microsoft service has its own terms |
+| [Node.js](https://nodejs.org) | MIT and others | Included in the Windows download; see `node/LICENSE.txt` there |
 | Fonts (Inter, Instrument Serif, JetBrains Mono) | SIL Open Font License | Loaded from Google Fonts by the browser |
 
 **Piper voice licenses differ, and some datasets do not allow commercial use.**

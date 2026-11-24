@@ -32,3 +32,6 @@ ads/
 
 # Your own music — yours, not source.
 music/
+
+# Portable builds from scripts/package-windows.mjs
+release/

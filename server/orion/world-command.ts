@@ -59,7 +59,12 @@ export class WorldCommandError extends Error {
   }
 }
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+/**
+ * The station folder. Normally two levels above this file; in the portable build everything is bundled into one
+ * file at the top of the folder, so the working directory (which the launcher sets) is used when it holds the bridge.
+ */
+const MODULE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const ROOT = fs.existsSync(path.join(process.cwd(), "scripts", "world_command_bridge.py")) ? process.cwd() : MODULE_ROOT;
 const BRIDGE = path.join(ROOT, "scripts", "world_command_bridge.py");
 export const WORLD_TOKEN_FILE = path.join(ROOT, "data", "world_api_token.txt");
 

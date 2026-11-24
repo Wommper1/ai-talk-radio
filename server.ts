@@ -11,7 +11,6 @@ import express from "express";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { createServer as createViteServer } from "vite";
 import "dotenv/config";
 
 import {
@@ -661,7 +660,7 @@ async function main() {
       const job = piperJob;
       const note = (line: string) => {
         // A percentage replaces the previous percentage for the same file rather than piling up.
-        const stem = line.replace(/ … \d+%$/, "");
+        const stem = line.replace(/ … (\d+%|[\d.]+ MB)$/, "");
         const last = job.lines[job.lines.length - 1];
         if (last && last.replace(/ … (\d+%|[\d.]+ MB)$/, "") === stem) job.lines[job.lines.length - 1] = line;
         else job.lines.push(line);
@@ -2997,6 +2996,8 @@ async function main() {
     if (isProduction) {
       console.warn("NODE_ENV=production but dist/index.html is missing — falling back to the dev server.");
     }
+    // Loaded only here: the portable Windows build ships a prebuilt dist/ and no Vite at all.
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true, hmr: process.env.ENABLE_HMR === "true" },
       appType: "spa",

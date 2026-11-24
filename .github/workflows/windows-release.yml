@@ -1,0 +1,113 @@
+name: Windows download
+
+# Builds the portable Windows zip (Node.js included, no install needed), checks
+# that it really starts on Windows, and attaches it to the release.
+#
+# Runs on its own when a release is published. It can also be run by hand from
+# the Actions tab: leave "tag" empty to only build and test (the zip is kept as
+# a workflow artifact), or name an existing release tag to attach it there.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the zip to (empty: build and test only)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  windows-zip:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - uses: actions/setup-node@v4
+        with:
+          # The Node.js that ends up inside the zip.
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check the version matches the release
+        if: env.TAG != ''
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ("v$version" -ne $env:TAG) {
+            Write-Error "package.json says $version but the release is $env:TAG. Bump the version first."
+            exit 1
+          }
+
+      - name: Check the PowerShell scripts parse
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($file in Get-ChildItem -Recurse -Include *.ps1 -Path launcher, scripts) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$null, [ref]$errors) | Out-Null
+            foreach ($e in $errors) { Write-Host "$($file.Name):$($e.Extent.StartLineNumber) $($e.Message)"; $failed = $true }
+          }
+          if ($failed) { exit 1 }
+
+      - run: npm run typecheck
+      - run: npm run selftest
+      - run: npm run build
+      - run: npm run package:windows
+
+      - name: Start the station from the zip, through its launcher
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem release -Filter *.zip | Select-Object -First 1
+          $test = Join-Path $env:RUNNER_TEMP 'unzipped'
+          Expand-Archive -Path $zip.FullName -DestinationPath $test
+          $folder = Get-ChildItem $test -Directory | Select-Object -First 1
+
+          # No Node.js on PATH: the zip must work with only what it carries.
+          $env:PATH = ($env:PATH -split ';' | Where-Object { -not (Test-Path (Join-Path $_ 'node.exe')) }) -join ';'
+
+          $launcher = Start-Process -FilePath cmd.exe -ArgumentList '/c', "`"$($folder.FullName)\Start Local Talk Radio.cmd`"" -PassThru -WindowStyle Hidden
+
+          $ok = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            try {
+              $health = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/health' -TimeoutSec 2
+              if ($health.app -eq 'local-talk-radio') { $ok = $true; break }
+            } catch { }
+            Start-Sleep -Seconds 1
+          }
+
+          if ($ok) {
+            $page = Invoke-WebRequest -Uri 'http://127.0.0.1:3000/' -UseBasicParsing
+            $setup = Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/setup/piper'
+            Write-Host "Health OK, page $($page.StatusCode), setup endpoint state '$($setup.state)'"
+            if ($page.StatusCode -ne 200 -or $page.Content -notmatch '<div id="root">') { $ok = $false }
+          }
+
+          Get-Process node, chrome, msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue
+
+          if (-not $ok) { Write-Error 'The packaged station did not start.'; exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: release/*.zip
+          if-no-files-found: error
+
+      - name: Attach the zip to the release
+        if: env.TAG != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload $env:TAG (Get-ChildItem release -Filter *.zip).FullName --clobber

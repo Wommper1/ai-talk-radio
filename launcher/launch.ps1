@@ -3,6 +3,10 @@
 # Starts the server if it is not already up, waits for it to answer, then opens
 # the browser. The server runs as a child of this window, so closing the window
 # stops the app.
+#
+# Two layouts: a source checkout (Node installed, runs server.ts through tsx),
+# and the portable Windows download (node\node.exe plus a bundled server.mjs
+# and a prebuilt dist\, no npm needed).
 
 $ErrorActionPreference = 'Stop'
 
@@ -53,50 +57,62 @@ if (-not $browser) {
 }
 Write-Step "Browser: $(Split-Path -Leaf $browser)"
 
-# ── Node present? ────────────────────────────────────────────────────
-try {
-    $nodeVersion = (& node --version) 2>$null
-    Write-Step "Node $nodeVersion"
-} catch {
-    Write-Host "  Node.js is not installed." -ForegroundColor Red
-    Write-Host "  Install it from https://nodejs.org and run this again." -ForegroundColor Red
-    Read-Host "`n  Press Enter to close"
-    exit 1
-}
+$bundledNode = Join-Path $root 'node\node.exe'
+$portable = (Test-Path -LiteralPath $bundledNode) -and (Test-Path -LiteralPath (Join-Path $root 'server.mjs'))
 
-# ── Dependencies up to date? ─────────────────────────────────────────
-# The server runs straight from TypeScript source via tsx, so code changes are
-# always picked up. Only dependencies can go stale, so compare package.json
-# against the node_modules marker and reinstall when it has moved ahead.
-$modules = Join-Path $root 'node_modules'
-$pkg = Join-Path $root 'package.json'
-$stamp = Join-Path $modules '.install-stamp'
-$lock = Join-Path $root 'package-lock.json'
-$tsx = Join-Path $modules '.bin\tsx.cmd'
-
-$needsInstall = $false
-if (-not (Test-Path $modules) -or -not (Test-Path $tsx)) {
-    $needsInstall = $true
-    Write-Step "Installing dependencies (first run, this takes a minute)..."
-} elseif (-not (Test-Path $stamp) -or (Get-Item $pkg).LastWriteTimeUtc -gt (Get-Item $stamp).LastWriteTimeUtc -or (Get-Item $lock).LastWriteTimeUtc -gt (Get-Item $stamp).LastWriteTimeUtc) {
-    $needsInstall = $true
-    Write-Step "Dependencies changed - updating..."
-}
-
-if ($needsInstall) {
-    & npm install --no-audit --no-fund
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  npm install failed." -ForegroundColor Red
+if ($portable) {
+    Write-Step "Node $((& $bundledNode --version) 2>$null) (included)"
+} else {
+    # ── Node present? ────────────────────────────────────────────────────
+    try {
+        $nodeVersion = (& node --version) 2>$null
+        Write-Step "Node $nodeVersion"
+    } catch {
+        Write-Host "  Node.js is not installed." -ForegroundColor Red
+        Write-Host "  Install it from https://nodejs.org and run this again." -ForegroundColor Red
         Read-Host "`n  Press Enter to close"
         exit 1
     }
-    New-Item -ItemType File -Path $stamp -Force | Out-Null
+
+    # ── Dependencies up to date? ─────────────────────────────────────────
+    # The server runs straight from TypeScript source via tsx, so code changes are
+    # always picked up. Only dependencies can go stale, so compare package.json
+    # against the node_modules marker and reinstall when it has moved ahead.
+    $modules = Join-Path $root 'node_modules'
+    $pkg = Join-Path $root 'package.json'
+    $stamp = Join-Path $modules '.install-stamp'
+    $lock = Join-Path $root 'package-lock.json'
+    $tsx = Join-Path $modules '.bin\tsx.cmd'
+
+    $needsInstall = $false
+    if (-not (Test-Path $modules) -or -not (Test-Path $tsx)) {
+        $needsInstall = $true
+        Write-Step "Installing dependencies (first run, this takes a minute)..."
+    } elseif (-not (Test-Path $stamp) -or (Get-Item $pkg).LastWriteTimeUtc -gt (Get-Item $stamp).LastWriteTimeUtc -or (Get-Item $lock).LastWriteTimeUtc -gt (Get-Item $stamp).LastWriteTimeUtc) {
+        $needsInstall = $true
+        Write-Step "Dependencies changed - updating..."
+    }
+
+    if ($needsInstall) {
+        & npm install --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  npm install failed." -ForegroundColor Red
+            Read-Host "`n  Press Enter to close"
+            exit 1
+        }
+        New-Item -ItemType File -Path $stamp -Force | Out-Null
+    }
 }
 
-# A stale production build would be served instead of the current source, so
-# make sure we never start in production mode by accident.
-$env:NODE_ENV = 'development'
-$env:ENABLE_HMR = 'false'
+if ($portable) {
+    # The portable download is a prebuilt release: serve its dist\ as-is.
+    $env:NODE_ENV = 'production'
+} else {
+    # A stale production build would be served instead of the current source, so
+    # make sure we never start in production mode by accident.
+    $env:NODE_ENV = 'development'
+    $env:ENABLE_HMR = 'false'
+}
 
 # Search the whole range. An existing station could be producing a show, so
 # leave it running and ask the operator to close it before loading current code.
@@ -104,6 +120,13 @@ $selected = $false
 foreach ($candidate in 3000..3010) {
     $candidateUrl = "http://localhost:$candidate"
     if (Test-Health $candidateUrl) {
+        if ($portable) {
+            # Nothing to update in a release, so just bring the running station back up on screen.
+            Write-Host "  Local Talk Radio is already running. Opening it." -ForegroundColor Yellow
+            Start-Process -FilePath $browser -ArgumentList "--app=$candidateUrl"
+            Start-Sleep -Seconds 2
+            exit 0
+        }
         Write-Host "  Local Talk Radio is already running on port $candidate." -ForegroundColor Yellow
         Write-Host "  Close its server window when the current show finishes, then open this shortcut again for the latest local code." -ForegroundColor Yellow
         Read-Host "`n  Press Enter to close"
@@ -134,33 +157,38 @@ if ($llmUp) {
 } else {
     Write-Host "  No model server found on the usual ports." -ForegroundColor Yellow
     Write-Host "  Start LM Studio (Developer tab -> load a model -> Start Server)," -ForegroundColor Yellow
-    Write-Host "  then pick the model in Settings. The app will still open." -ForegroundColor Yellow
+    Write-Host "  and the setup screen will find it. The app will still open." -ForegroundColor Yellow
 }
 
 # ── Start the server ─────────────────────────────────────────────────
 # Say out loud which code this launch is about to run. A window left open all
 # day serves whatever it compiled at boot, so "did my change take effect" is a
 # question worth answering before the browser even opens.
-$codeAt = Get-ChildItem -Path (Join-Path $root "src"), (Join-Path $root "server"), (Join-Path $root "server.ts") -Recurse -File -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$codeAt = if ($portable) { $null } else { Get-ChildItem -Path (Join-Path $root "src"), (Join-Path $root "server"), (Join-Path $root "server.ts") -Recurse -File -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1 }
 if ($codeAt) { Write-Step ("Code last changed {0:ddd HH:mm}" -f $codeAt.LastWriteTime) }
 
 Write-Step "Starting..."
 
-$npx = (Get-Command npx.cmd -ErrorAction SilentlyContinue)
-if ($null -eq $npx) { $npx = (Get-Command npx -ErrorAction SilentlyContinue) }
-if ($null -eq $npx) {
-    Write-Host "  npx was not found on PATH." -ForegroundColor Red
-    Read-Host "`n  Press Enter to close"
-    exit 1
-}
+if ($portable) {
+    $server = Start-Process -FilePath $bundledNode -ArgumentList @('--disable-warning=ExperimentalWarning', 'server.mjs') `
+        -WorkingDirectory $root -NoNewWindow -PassThru
+} else {
+    $npx = (Get-Command npx.cmd -ErrorAction SilentlyContinue)
+    if ($null -eq $npx) { $npx = (Get-Command npx -ErrorAction SilentlyContinue) }
+    if ($null -eq $npx) {
+        Write-Host "  npx was not found on PATH." -ForegroundColor Red
+        Read-Host "`n  Press Enter to close"
+        exit 1
+    }
 
-# Deliberately NOT watch mode. tsx compiles from source at startup, so every
-# launch already runs the newest code, and a watcher that restarts the server
-# mid-show would kill the generation in progress.
-$serverArgs = @('tsx', 'server.ts')
-$server = Start-Process -FilePath $npx.Source -ArgumentList $serverArgs `
-    -WorkingDirectory $root -NoNewWindow -PassThru
+    # Deliberately NOT watch mode. tsx compiles from source at startup, so every
+    # launch already runs the newest code, and a watcher that restarts the server
+    # mid-show would kill the generation in progress.
+    $serverArgs = @('tsx', 'server.ts')
+    $server = Start-Process -FilePath $npx.Source -ArgumentList $serverArgs `
+        -WorkingDirectory $root -NoNewWindow -PassThru
+}
 
 # Make sure the server does not outlive this window.
 $stop = {

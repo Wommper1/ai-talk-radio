@@ -328,8 +328,9 @@ export function Setup({
                 )}
                 {e === "edge" && !ok && !checkingVoices && (
                   <p className="mt-2 text-xs leading-relaxed text-[var(--color-mute)]">
-                    Optional. To add them, run <span className="font-mono text-[var(--color-dim)]">npm run setup-edge-tts</span>{" "}
-                    once (Windows), then press Check again. The README has the macOS and Linux command.
+                    Optional, and needs Python. On Windows, double-click <strong className="text-[var(--color-dim)]">Set up Edge voices</strong>{" "}
+                    in the station folder (or run <span className="font-mono text-[var(--color-dim)]">npm run setup-edge-tts</span>), then
+                    press Check again. The README has the macOS and Linux command.
                   </p>
                 )}
               </EngineRow>
