@@ -22,6 +22,7 @@ import type {
   PlayoutItem,
   ScheduleSlot,
   Voice,
+  PiperSetupStatus,
 } from "../types";
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
@@ -59,6 +60,10 @@ export const api = {
 
   checkTts: (config: Config) =>
     json<ProbeResult<Voice>>("/api/check/tts", { method: "POST", body: JSON.stringify(config) }),
+
+  piperSetup: () => json<PiperSetupStatus>("/api/setup/piper"),
+
+  startPiperSetup: () => json<PiperSetupStatus>("/api/setup/piper", { method: "POST" }),
 
   stationStatus: (config: Config) =>
     json<StationStatus>("/api/station/status", { method: "POST", body: JSON.stringify({ config }) }),

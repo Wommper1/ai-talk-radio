@@ -53,42 +53,42 @@ send each line's text to Microsoft to be spoken.
    npm install
    ```
 
-2. Start your model server. In LM Studio: **Developer** tab → load a model →
-   **Start Server**. For Ollama, run `ollama serve`.
+2. Start your model server. In [LM Studio](https://lmstudio.ai): download a
+   model, then **Developer** tab → load it → **Start Server**. For Ollama, run
+   `ollama serve`.
 
-3. Install a voice. For fully offline speech:
-
-   ```bash
-   npm run setup-piper
-   ```
-
-   For the more natural Edge voices on Windows:
-
-   ```bash
-   npm run setup-edge-tts
-   ```
-
-   On macOS or Linux, create the same private environment by hand:
-
-   ```bash
-   python3 -m venv tools/edge-tts && tools/edge-tts/bin/pip install edge-tts
-   ```
-
-4. Check everything is wired up. It explains anything that is missing:
-
-   ```bash
-   npm run doctor
-   ```
-
-5. Run the station:
+3. Run the station:
 
    ```bash
    npm run dev
    ```
 
-6. Open <http://localhost:3000>, go to **Settings**, press **Refresh** next to
-   the model list, pick your model and press **Save**. Back in **Studio**, type
-   a topic and press **Start the show**.
+4. Open <http://localhost:3000>. A setup screen finds your model server,
+   picks the model (or asks, if you have several loaded), and offers a
+   **Download offline voices** button. Press **Go to the studio**, type a topic
+   and press **Start the show**.
+
+If anything is not working, `npm run doctor` checks the model server, voices
+and settings and explains how to fix each problem.
+
+**Voices from the command line.** The setup screen's download is the same as:
+
+```bash
+npm run setup-piper
+```
+
+For the more natural Edge voices on Windows, run this once, then press
+**Check again** on the setup screen:
+
+```bash
+npm run setup-edge-tts
+```
+
+On macOS or Linux, install Edge voices into the same private folder by hand:
+
+```bash
+python3 -m venv tools/edge-tts && tools/edge-tts/bin/pip install edge-tts
+```
 
 Finished shows are saved as plain folders under `shows/`.
 

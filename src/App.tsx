@@ -10,6 +10,7 @@ import { Settings } from "./components/Settings";
 import { Files } from "./components/Files";
 import { Realm } from "./components/Realm";
 import { Operations } from "./components/Operations";
+import { Setup } from "./components/Setup";
 import { Callout, StatusDot } from "./components/ui";
 
 type Tab = "studio" | "realm" | "commercials" | "operations" | "library" | "files" | "settings";
@@ -24,6 +25,8 @@ export default function App() {
   const [openShow, setOpenShow] = useState<Show | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [modelState, setModelState] = useState<"unknown" | "busy" | "ok" | "bad">("unknown");
+  /** The first-run setup screen: opened on its own while no model has been chosen, or from Settings. */
+  const [setupOpen, setSetupOpen] = useState(false);
 
   // Generation state
   const [running, setRunning] = useState(false);
@@ -286,6 +289,7 @@ export default function App() {
         ]);
         setConfig(cfg.config);
         setConfigPath(cfg.configPath);
+        if (!cfg.config.llm.model) setSetupOpen(true);
         setOptions(opts);
         setShows(list);
         setDrafts(savedDrafts);
@@ -676,6 +680,7 @@ export default function App() {
             onClick={() => {
               setTab("studio");
               setOpenShow(null);
+              setSetupOpen(false);
             }}
             className="flex items-center gap-2.5"
           >
@@ -692,10 +697,11 @@ export default function App() {
                 onClick={() => {
                   setTab(id);
                   setOpenShow(null);
+                  setSetupOpen(false);
                   if (id === "library") void refreshShows();
                 }}
                 className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm transition-colors ${
-                  tab === id && !openShow
+                  tab === id && !openShow && !setupOpen
                     ? "bg-[var(--color-panel-2)] text-white"
                     : "text-[var(--color-dim)] hover:text-white"
                 }`}
@@ -716,7 +722,21 @@ export default function App() {
       </header>
 
       <main>
-        {openShow ? (
+        {setupOpen && !running ? (
+          <Setup
+            config={config}
+            options={options}
+            onDone={(saved) => {
+              setConfig(saved);
+              setSetupOpen(false);
+              setTab("studio");
+            }}
+            onSkip={() => {
+              setSetupOpen(false);
+              setTab("settings");
+            }}
+          />
+        ) : openShow ? (
           <Player show={openShow} onBack={() => setOpenShow(null)} onDelete={remove} />
         ) : tab === "studio" ? (
           <Studio
@@ -793,6 +813,7 @@ export default function App() {
             onChange={setConfig}
             onSaved={() => {}}
             configPath={configPath}
+            onOpenSetup={() => setSetupOpen(true)}
           />
         )}
       </main>

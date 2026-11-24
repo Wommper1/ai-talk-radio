@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw, Play, RotateCcw, Save, Check } from "lucide-react";
+import { RefreshCw, Play, RotateCcw, Save, Check, Wand2 } from "lucide-react";
 import type { Config, HostConfig, MemoryStats, ModelInfo, Options, TtsEngine, Voice } from "../types";
 import { api } from "../lib/api";
 import { Button, Callout, Field, Input, Panel, Select, Slider, StatusDot, Textarea, Toggle } from "./ui";
@@ -11,11 +11,13 @@ interface Props {
   onChange: (config: Config) => void;
   onSaved: () => void;
   configPath: string;
+  /** Reopen the first-run setup screen. */
+  onOpenSetup?: () => void;
 }
 
 type ProbeState = "unknown" | "busy" | "ok" | "bad";
 
-export function Settings({ config, options, onChange, onSaved, configPath }: Props) {
+export function Settings({ config, options, onChange, onSaved, configPath, onOpenSetup }: Props) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [llmState, setLlmState] = useState<ProbeState>("unknown");
@@ -246,6 +248,15 @@ export function Settings({ config, options, onChange, onSaved, configPath }: Pro
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-5 py-6">
+      {onOpenSetup && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="ghost" onClick={onOpenSetup}>
+            <Wand2 size={13} />
+            Run the setup guide
+          </Button>
+        </div>
+      )}
+
       {/* ── Model ─────────────────────────────────────────────── */}
       <Panel
         title="Language model"

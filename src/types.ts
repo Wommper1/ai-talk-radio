@@ -370,6 +370,17 @@ export interface Voice {
   detail?: string;
 }
 
+/** Progress of the first-run Piper voice download. */
+export interface PiperSetupStatus {
+  state: "idle" | "running" | "done" | "failed";
+  lines: string[];
+  error?: string;
+  /** .onnx files present now. */
+  installed: string[];
+  /** The voices the download installs. */
+  voices: string[];
+}
+
 export interface ProbeResult<T> {
   ok: boolean;
   error?: string;

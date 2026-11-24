@@ -26,6 +26,7 @@ import {
 import { isLocalOrigin, requestGuard } from "./server/lib/request-guard.ts";
 import { probe as probeLlm, defaultBaseUrl, LlmError, queueStats } from "./server/providers/llm.ts";
 import { probeTts, synthesize, TtsError } from "./server/providers/tts.ts";
+import { DEFAULT_PIPER_VOICES, installPiper, installedPiperVoices } from "./server/setup/piper.ts";
 import { runConversation, generateShowNotes, warmUp, type Turn } from "./server/pipeline/conversation.ts";
 import { buildIndex, recall, memoryStats, clearIndex, type Recollection } from "./server/memory/retrieval.ts";
 import { callerBriefing, findCaller, forgetCaller, listCallers, rememberCall } from "./server/memory/callers.ts";
@@ -194,6 +195,13 @@ import {
   updateAutomationSettings,
   upsertScheduleSlot,
 } from "./server/station/automation.ts";
+
+
+/** The one Piper download the setup screen can start. */
+let piperJob: { state: "idle" | "running" | "done" | "failed"; lines: string[]; error?: string } = {
+  state: "idle",
+  lines: [],
+};
 
 const PORT = Number(process.env.PORT ?? 3000);
 const isProduction = process.env.NODE_ENV === "production";
@@ -635,6 +643,40 @@ async function main() {
   app.post("/api/check/tts", async (req, res) => {
     const config = withOverrides(loadConfig(), req.body);
     res.json(await probeTts(config.tts));
+  });
+
+  /*
+   * First-run voice install. The download takes minutes, so it runs as one
+   * background job that the setup screen polls; a second request while it is
+   * running just reports on the first. Always the default voices: the screen
+   * has no reason to choose others, and it keeps names out of the request.
+   */
+  app.get("/api/setup/piper", (_req, res) => {
+    res.json({ ...piperJob, installed: installedPiperVoices(), voices: DEFAULT_PIPER_VOICES });
+  });
+
+  app.post("/api/setup/piper", (_req, res) => {
+    if (piperJob.state !== "running") {
+      piperJob = { state: "running", lines: [], error: undefined };
+      const job = piperJob;
+      const note = (line: string) => {
+        // A percentage replaces the previous percentage for the same file rather than piling up.
+        const stem = line.replace(/ … \d+%$/, "");
+        const last = job.lines[job.lines.length - 1];
+        if (last && last.replace(/ … (\d+%|[\d.]+ MB)$/, "") === stem) job.lines[job.lines.length - 1] = line;
+        else job.lines.push(line);
+        if (job.lines.length > 40) job.lines.splice(0, job.lines.length - 40);
+      };
+      installPiper(DEFAULT_PIPER_VOICES, note)
+        .then(() => {
+          job.state = "done";
+        })
+        .catch((err: Error) => {
+          job.state = "failed";
+          job.error = err.message;
+        });
+    }
+    res.status(202).json({ ...piperJob, installed: installedPiperVoices(), voices: DEFAULT_PIPER_VOICES });
   });
 
   /** One operator-facing view of everything required to put a show on air. */
