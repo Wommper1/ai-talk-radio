@@ -46,7 +46,15 @@ function voiceUrlPath(name: string): string {
 async function download(url: string, dest: string, label: string): Promise<void> {
   process.stdout.write(`  ${label} ... `);
 
-  const res = await fetch(url, { redirect: "follow" });
+  let res: Response;
+  try {
+    res = await fetch(url, { redirect: "follow" });
+  } catch (err) {
+    // Node's fetch says only "fetch failed"; the useful part (DNS, refused, TLS) is in `cause`.
+    const cause = (err as { cause?: { code?: string; message?: string } }).cause;
+    const detail = cause?.code ?? cause?.message ?? (err as Error).message;
+    throw new Error(`could not download ${url} (${detail}). Check your internet connection or proxy, then run this again.`);
+  }
   if (!res.ok || !res.body) {
     throw new Error(`HTTP ${res.status} for ${url}`);
   }

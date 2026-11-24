@@ -25,6 +25,7 @@ const LINE =
   "It is quarter past midnight, and the lines are open.";
 
 let failures = 0;
+let spoken = 0;
 
 for (const engine of engines) {
   console.log(`\n─── ${engine} ───`);
@@ -35,6 +36,8 @@ for (const engine of engines) {
   if (!probe.ok) {
     console.log(`  unavailable: ${probe.error}`);
     if (probe.hint) console.log(`  → ${probe.hint}`);
+    // Asked for by name, an engine that cannot run is a failure, not a skip.
+    if (requested) failures++;
     continue;
   }
 
@@ -81,9 +84,13 @@ for (const engine of engines) {
     if (peak < 0.05) {
       failures++;
       console.log("         WARNING: output is nearly silent");
+    } else {
+      spoken++;
     }
   }
 }
 
-console.log(`\n${failures === 0 ? "TTS OK" : `${failures} failure(s)`}\n`);
-process.exit(failures === 0 ? 0 : 1);
+if (spoken === 0 && failures === 0) failures++; // nothing available at all
+const ok = failures === 0;
+console.log(`\n${ok ? "TTS OK" : spoken === 0 ? "No speech engine produced audio" : `${failures} failure(s)`}\n`);
+process.exit(ok ? 0 : 1);
