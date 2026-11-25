@@ -52,6 +52,11 @@ import { CURRENT_AD_LIBRARY_FORMAT, pickForReuse } from "../server/pipeline/adli
 import { matchAdLoudness, type Placed } from "../server/pipeline/produce.ts";
 import { normalizeConfig, DEFAULT_CONFIG } from "../server/config.ts";
 import { DEFAULT_PIPER_VOICES, isPiperVoiceName } from "../server/setup/piper.ts";
+import { buildEpisodeHtml, buildFeed, buildIndexHtml, buildVtt, normalizePodcastSettings } from "../server/podcast/feed.ts";
+import { wavToMp3 } from "../server/podcast/mp3.ts";
+import { podcastCoverPng } from "../server/podcast/cover-png.ts";
+import { imageSize } from "../server/podcast/publish.ts";
+import { decodeMp3 } from "../server/audio/mp3.ts";
 import { duck, applyTone, compress, limit } from "../server/audio/effects.ts";
 import { analyseLoudness, masterStereo } from "../server/audio/loudness.ts";
 import {
@@ -989,6 +994,97 @@ check("the Guild speaks by default", DEFAULT_CONFIG.orion.guildVoices === true);
     "unsafe Piper voice names are refused",
     !isPiperVoiceName("../../etc/passwd") && !isPiperVoiceName("en_US-ryan-high/../x") && !isPiperVoiceName(""),
   );
+}
+
+// ── Podcast feed ─────────────────────────────────────────────────
+{
+  const settings = normalizePodcastSettings(
+    {
+      title: 'Night <Owl> & "Friends"',
+      siteUrl: "https://example.github.io/night-owl",
+      ownerEmail: "not an email",
+      category: "Hacking",
+      episodes: ["2026-01-01-a-show-abc123", "../../etc", 42],
+    },
+    "Station",
+  );
+  check("podcast site address gains a trailing slash", settings.siteUrl === "https://example.github.io/night-owl/", settings.siteUrl);
+  check("podcast refuses non-web addresses", normalizePodcastSettings({ siteUrl: "javascript:alert(1)" }, "S").siteUrl === "");
+  check("podcast drops an invalid owner email", settings.ownerEmail === "");
+  check("podcast falls back to a real category", settings.category === "Comedy");
+  check("podcast keeps only safe episode ids", settings.episodes.length === 1 && settings.episodes[0] === "2026-01-01-a-show-abc123");
+  check("podcast labels AI episodes by default", settings.aiNotice === true);
+
+  const episode = {
+    id: "2026-01-01-a-show-abc123",
+    title: "Ban <script>alert(1)</script> phones?",
+    summary: "Dee & Marco argue.",
+    createdAt: "2026-01-01T20:00:00.000Z",
+    duration: 754.4,
+    hosts: ["Marco", "Dee"],
+    bytes: 1234567,
+    transcript: [
+      { start: 0, end: 2.5, speaker: "Marco", text: "Welcome --> in <b>tonight</b> & always." },
+      { start: 2.5, end: 62.25, speaker: "Dee", text: "Second line." },
+    ],
+  };
+  const feed = buildFeed(settings, [episode], new Date("2026-01-02T00:00:00Z"));
+  check("feed escapes titles", feed.includes("Night &lt;Owl&gt; &amp; &quot;Friends&quot;") && !feed.includes("<script>"));
+  check(
+    "feed enclosure is an absolute MP3 link with its size",
+    feed.includes('<enclosure url="https://example.github.io/night-owl/episodes/2026-01-01-a-show-abc123.mp3" length="1234567" type="audio/mpeg"/>'),
+  );
+  check("feed duration is whole seconds", feed.includes("<itunes:duration>754</itunes:duration>"));
+  check("feed links the transcript", feed.includes('episodes/2026-01-01-a-show-abc123.vtt" type="text/vtt"'));
+  check("feed says each episode was AI-made", feed.includes("Written and voiced by AI"));
+  check("feed has no owner block without an email", !feed.includes("<itunes:owner>"));
+  check("feed tags balance", (feed.match(/<item>/g) ?? []).length === 1 && (feed.match(/<\/item>/g) ?? []).length === 1);
+
+  const vtt = buildVtt(episode.transcript);
+  check("transcript is WebVTT", vtt.startsWith("WEBVTT\n\n00:00:00.000 --> 00:00:02.500\n<v Marco>"));
+  check("transcript cue times past a minute", vtt.includes("00:00:02.500 --> 00:01:02.250"));
+  check("transcript cannot end a cue early or inject tags", !vtt.includes("Welcome -->") && vtt.includes("&lt;b>tonight"));
+
+  const html = buildEpisodeHtml(settings, episode) + buildIndexHtml(settings, [episode]);
+  check("podcast pages escape model text", !html.includes("<script>alert") && html.includes("&lt;script&gt;"));
+
+  const cover = podcastCoverPng("The Night Owl Hour with Paul & Rae");
+  const size = imageSize(cover);
+  check("podcast cover is a 1400 px square PNG", size?.type === "png" && size.width === 1400 && size.height === 1400, JSON.stringify(size));
+  check("JPEG sizes are read", imageSize(Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0, 17, 8, 0x05, 0xdc, 0x05, 0x78, 3, 0, 0]))?.width === 1400);
+  check("non-images are refused as covers", imageSize(Buffer.from("GIF89a not an image at all")) === null);
+
+  // A short studio-format master (48 kHz, 24-bit, stereo) survives the trip to MP3 and back.
+  const tmp = fs.mkdtempSync(path.join(process.cwd(), ".podcast-test-"));
+  try {
+    const seconds = 3;
+    const n = 48000 * seconds;
+    const left = new Float32Array(n);
+    const right = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      left[i] = Math.sin((i * 2 * Math.PI * 220) / 48000) * 0.4;
+      right[i] = Math.sin((i * 2 * Math.PI * 330) / 48000) * 0.4;
+    }
+    const wav = path.join(tmp, "show.wav");
+    fs.writeFileSync(wav, encodeWavStereo({ sampleRate: 48000, left, right }, 24));
+    const out = path.join(tmp, "show.mp3");
+    let lastFraction = 0;
+    const result = await wavToMp3(wav, out, {
+      quality: "standard",
+      tags: { title: "Ünïcode title", artist: "Station", album: "Podcast", year: "2026" },
+      onProgress: (f) => (lastFraction = f),
+    });
+    const mp3 = fs.readFileSync(out);
+    const decoded = await decodeMp3(mp3);
+    const back = durationOf(decoded);
+    check("show encodes to MP3", result.bytes > 20000 && Math.abs(result.seconds - seconds) < 0.01, `${result.bytes} bytes`);
+    check("MP3 decodes to the same length", Math.abs(back - seconds) < 0.15, back.toFixed(3));
+    check("MP3 carries an ID3 title tag", mp3.toString("latin1", 0, 3) === "ID3" && mp3.includes(Buffer.from("TIT2")));
+    check("MP3 encode reports completion", lastFraction === 1);
+    check("MP3 encode leaves no partial file", !fs.existsSync(`${out}.part`));
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 check(
   "and can be switched off",

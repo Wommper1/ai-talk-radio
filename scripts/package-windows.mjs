@@ -67,7 +67,8 @@ const result = await build({
   legalComments: "none", // collected into THIRD-PARTY-NOTICES.txt instead
   metafile: true,
   // Vite only runs when dist/ is missing, which never happens here; keep it (and its native parts) out.
-  external: ["vite", "@vitejs/plugin-react", "@tailwindcss/vite", "lightningcss", "fsevents"],
+  // LAME (the MP3 encoder) is LGPL: it ships as its own replaceable module beside server.mjs, not inside it.
+  external: ["vite", "@vitejs/plugin-react", "@tailwindcss/vite", "lightningcss", "fsevents", "@breezystack/lamejs"],
   // Bundled CommonJS packages (express) still call require() for Node built-ins.
   banner: {
     js: "import { createRequire as __ltrCreateRequire } from 'node:module'; const require = __ltrCreateRequire(import.meta.url);",
@@ -89,6 +90,8 @@ copy("docs/guides", "docs/guides");
 copy("docs/REALM.md", "docs/REALM.md");
 copy("docs/WORLD_API_V1.md", "docs/WORLD_API_V1.md");
 copy(".env.example");
+// Unbundled LGPL module (see `external` above), with its license and source as published.
+copy("node_modules/@breezystack/lamejs");
 
 /* ── 3. Node.js itself ─────────────────────────────────────────── */
 
@@ -220,7 +223,8 @@ fs.writeFileSync(
   crlf(
     `Local Talk Radio bundles the following open-source software.\n` +
       `Node.js is included under its own license in node/LICENSE.txt.\n` +
-      `Piper, its voices and edge-tts are downloaded later, on request, and are not part of this package.\n\n` +
+      `Piper, its voices and edge-tts are downloaded later, on request, and are not part of this package.\n` +
+      `The MP3 encoder (@breezystack/lamejs, LGPL-3.0) is not bundled into server.mjs: it is the separate, replaceable module in node_modules/@breezystack/lamejs.\n\n` +
       notices.join("\n"),
   ),
 );

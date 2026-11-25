@@ -370,6 +370,53 @@ export interface Voice {
   detail?: string;
 }
 
+export interface PodcastSettings {
+  title: string;
+  author: string;
+  description: string;
+  siteUrl: string;
+  language: string;
+  category: string;
+  explicit: boolean;
+  ownerEmail: string;
+  quality: "small" | "standard" | "high";
+  aiNotice: boolean;
+  episodes: string[];
+}
+
+export interface PodcastJob {
+  state: "idle" | "running" | "done" | "failed";
+  message: string;
+  done: number;
+  total: number;
+  fraction: number;
+  error?: string;
+  finishedAt?: string;
+  published?: number;
+}
+
+export interface PodcastState {
+  settings: PodcastSettings;
+  shows: Array<{
+    id: string;
+    title: string;
+    createdAt: string;
+    duration: number;
+    publishable: boolean;
+    included: boolean;
+    encoded: boolean;
+    hasRecord: boolean;
+  }>;
+  job: PodcastJob;
+  siteDir: string;
+  published: boolean;
+  customCover: boolean;
+  categories: string[];
+  qualities: Array<{ id: PodcastSettings["quality"]; label: string }>;
+  /** Set after a cover upload that directories may reject. */
+  warning?: string;
+}
+
 /** Progress of the first-run Piper voice download. */
 export interface PiperSetupStatus {
   state: "idle" | "running" | "done" | "failed";

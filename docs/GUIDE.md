@@ -416,6 +416,28 @@ not to say again.
 
 ---
 
+## Publishing a podcast
+
+The **Podcast** tab turns chosen shows into a podcast without putting the
+station online. **Publish** converts each finished show to MP3 (LAME, at 64,
+96 or 128 kbps), then writes `podcast/site/`: `feed.xml` (RSS with the iTunes
+and Podcasting 2.0 tags, including a WebVTT transcript per episode),
+`index.html`, an `episodes/` folder with a page, MP3 and transcript for each
+show, the cover, and `.nojekyll` for GitHub Pages. Upload that folder to any
+static host.
+
+Nothing is published unless it is ticked. MP3s are only re-encoded when the
+show or the quality changes, and unticked episodes' files are removed from the
+folder. Episodes that play a record from `music/` are flagged, because the
+station cannot know whether you hold the rights to publish it.
+
+A cover is drawn from the title as a 1400 px PNG, since directories reject SVG;
+upload your own square PNG or JPEG to replace it. Settings live in
+`podcast/podcast.json`. Step-by-step hosting instructions are in the tab and in
+the [how-to guide](guides/HOW_TO.md#publish-your-shows-as-a-podcast).
+
+---
+
 ## Memory across shows
 
 Past episodes are indexed so the hosts can genuinely reference them — "the

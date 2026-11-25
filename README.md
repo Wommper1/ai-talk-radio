@@ -24,6 +24,9 @@ send each line's text to Microsoft to be spoken.
 - **Deep dives.** Paste a document and a producer pass finds the hook before
   the hosts discuss it.
 - **Memory across shows.** Hosts can refer back to earlier episodes.
+- **Publish as a podcast.** Pick shows, press Publish, and get MP3s, a feed
+  any podcast app can subscribe to, and a small website with transcripts,
+  ready to upload to free hosting such as GitHub Pages.
 - **Built for small models.** Tuned to run on an 8B model with a 6 GB GPU.
 - **No ffmpeg.** All audio decoding, mixing and mastering is done in TypeScript.
 
@@ -119,7 +122,7 @@ that starts the server and opens the browser in one step.
 - **[Getting started](docs/guides/GETTING_STARTED.md)**: from nothing to your
   first show, step by step, no technical knowledge needed.
 - **[How to…](docs/guides/HOW_TO.md)**: short recipes for call-ins, deep dives,
-  sponsors, songs, voices, speed and more.
+  sponsors, songs, voices, publishing a podcast, speed and more.
 - **[Troubleshooting](docs/guides/TROUBLESHOOTING.md)**: what to do when
   something is not working.
 - **[The full guide](docs/GUIDE.md)** covers how a show is built, ad breaks,
@@ -168,6 +171,7 @@ Node.js, and lists every license in `THIRD-PARTY-NOTICES.txt`:
 | Component | License | Notes |
 | --- | --- | --- |
 | npm dependencies | MIT, ISC, BSD, Apache-2.0, MPL-2.0 (build tool only) | Installed by `npm install` |
+| [`@breezystack/lamejs`](https://www.npmjs.com/package/@breezystack/lamejs) | LGPL-3.0 | MP3 encoder for the podcast; kept as its own module, never bundled |
 | [`mpg123-decoder`](https://www.npmjs.com/package/mpg123-decoder) | MIT wrapper around mpg123 (LGPL-2.1) | Decodes Edge MP3s |
 | [Piper](https://github.com/rhasspy/piper) engine | MIT | Downloaded by `npm run setup-piper` |
 | Piper voices | **Varies by voice** | See below |

@@ -34,4 +34,7 @@ ads/
 music/
 
 # Portable builds from scripts/package-windows.mjs
-release/
+/release/
+
+# Your podcast: settings, cover and the built website.
+/podcast/

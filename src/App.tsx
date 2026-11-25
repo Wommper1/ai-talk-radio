@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Radio, Library as LibraryIcon, SlidersHorizontal, Cpu, HardDrive, Crown, Megaphone, Gauge } from "lucide-react";
+import { Radio, Library as LibraryIcon, SlidersHorizontal, Cpu, HardDrive, Crown, Megaphone, Gauge, Rss } from "lucide-react";
 import type { Config, ControlState, LiveTurn, Options, PlannedBreak, ProducerBrief, RunOrderEntry, Show, ShowDraft, Stage, TimingEntry } from "./types";
 import { api, generateStream } from "./lib/api";
 import { Studio } from "./components/Studio";
@@ -11,9 +11,10 @@ import { Files } from "./components/Files";
 import { Realm } from "./components/Realm";
 import { Operations } from "./components/Operations";
 import { Setup } from "./components/Setup";
+import { Podcast } from "./components/Podcast";
 import { Callout, StatusDot } from "./components/ui";
 
-type Tab = "studio" | "realm" | "commercials" | "operations" | "library" | "files" | "settings";
+type Tab = "studio" | "realm" | "commercials" | "operations" | "library" | "podcast" | "files" | "settings";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("studio");
@@ -666,6 +667,7 @@ export default function App() {
     { id: "commercials", label: "Commercials", icon: Megaphone },
     { id: "operations", label: "Operations", icon: Gauge },
     { id: "library", label: "Library", icon: LibraryIcon },
+    { id: "podcast", label: "Podcast", icon: Rss },
     { id: "files", label: "Files", icon: HardDrive },
     { id: "settings", label: "Settings", icon: SlidersHorizontal },
   ];
@@ -712,7 +714,7 @@ export default function App() {
             ))}
           </nav>
 
-          <div className="hidden items-center gap-2 border-l border-[var(--color-line)] pl-4 md:flex">
+          <div className="hidden items-center gap-2 border-l border-[var(--color-line)] pl-4 xl:flex">
             <StatusDot state={running ? "busy" : modelState} />
             <span className="max-w-[190px] truncate font-mono text-[11px] text-[var(--color-mute)]">
               {config.llm.model || "no model selected"}
@@ -800,6 +802,8 @@ export default function App() {
           <Operations config={config} />
         ) : tab === "library" ? (
           <Library shows={shows} onOpen={setOpenShow} onDelete={remove} onNew={() => setTab("studio")} />
+        ) : tab === "podcast" ? (
+          <Podcast />
         ) : tab === "files" ? (
           <Files
             onOpenShow={(id) => {

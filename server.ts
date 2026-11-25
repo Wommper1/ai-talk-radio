@@ -26,6 +26,21 @@ import { isLocalOrigin, requestGuard } from "./server/lib/request-guard.ts";
 import { probe as probeLlm, defaultBaseUrl, LlmError, queueStats } from "./server/providers/llm.ts";
 import { probeTts, synthesize, TtsError } from "./server/providers/tts.ts";
 import { DEFAULT_PIPER_VOICES, installPiper, installedPiperVoices } from "./server/setup/piper.ts";
+import {
+  coverImage,
+  customCover,
+  loadPodcastSettings,
+  podcastDir,
+  podcastJob,
+  podcastShows,
+  podcastSiteDir,
+  removeCustomCover,
+  saveCustomCover,
+  savePodcastSettings,
+  startPublish,
+} from "./server/podcast/publish.ts";
+import { PODCAST_CATEGORIES } from "./server/podcast/feed.ts";
+import { QUALITY as PODCAST_QUALITY } from "./server/podcast/mp3.ts";
 import { runConversation, generateShowNotes, warmUp, type Turn } from "./server/pipeline/conversation.ts";
 import { buildIndex, recall, memoryStats, clearIndex, type Recollection } from "./server/memory/retrieval.ts";
 import { callerBriefing, findCaller, forgetCaller, listCallers, rememberCall } from "./server/memory/callers.ts";
@@ -676,6 +691,82 @@ async function main() {
         });
     }
     res.status(202).json({ ...piperJob, installed: installedPiperVoices(), voices: DEFAULT_PIPER_VOICES });
+  });
+
+  /* ── Podcast ───────────────────────────────────────────────────
+   * Turns chosen shows into a folder (MP3s, RSS feed, website) that can be
+   * uploaded to any static host. Nothing here goes online by itself.
+   */
+  const station = () => loadConfig().show.station;
+
+  const podcastState = () => {
+    const settings = loadPodcastSettings(station());
+    return {
+      settings,
+      shows: podcastShows(settings),
+      job: podcastJob(),
+      siteDir: podcastSiteDir(),
+      published: fs.existsSync(path.join(podcastSiteDir(), "feed.xml")),
+      customCover: Boolean(customCover()),
+      categories: PODCAST_CATEGORIES,
+      qualities: Object.entries(PODCAST_QUALITY).map(([id, q]) => ({ id, label: q.label })),
+    };
+  };
+
+  app.get("/api/podcast", (_req, res) => res.json(podcastState()));
+
+  app.put("/api/podcast", (req, res) => {
+    savePodcastSettings(req.body, station());
+    res.json(podcastState());
+  });
+
+  app.get("/api/podcast/job", (_req, res) => res.json(podcastJob()));
+
+  app.post("/api/podcast/publish", (_req, res) => {
+    try {
+      startPublish(station());
+      res.status(202).json(podcastState());
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
+  app.get("/api/podcast/cover", (_req, res) => {
+    const cover = coverImage(loadPodcastSettings(station()));
+    res.setHeader("Cache-Control", "no-store");
+    res.type(cover.type).send(cover.data);
+  });
+
+  app.post("/api/podcast/cover", express.raw({ type: ["image/png", "image/jpeg"], limit: "8mb" }), (req, res) => {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: "Send a PNG or JPEG image." });
+    }
+    try {
+      res.json({ ...podcastState(), ...saveCustomCover(req.body) });
+    } catch (err) {
+      res.status(400).json({ error: (err as Error).message });
+    }
+  });
+
+  app.delete("/api/podcast/cover", (_req, res) => {
+    removeCustomCover();
+    res.json(podcastState());
+  });
+
+  /** Open the folder to upload in the system file browser. */
+  app.post("/api/podcast/reveal", (_req, res) => {
+    const dir = fs.existsSync(podcastSiteDir()) ? podcastSiteDir() : podcastDir();
+    fs.mkdirSync(dir, { recursive: true });
+    const command =
+      process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+    spawn(command, [dir], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+    res.json({ ok: true, path: dir });
+  });
+
+  /** The built website, exactly as it will look once uploaded. */
+  app.use("/podcast-preview", (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    express.static(podcastSiteDir(), { index: "index.html", dotfiles: "ignore" })(req, res, next);
   });
 
   /** One operator-facing view of everything required to put a show on air. */

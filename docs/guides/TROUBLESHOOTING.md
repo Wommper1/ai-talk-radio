@@ -112,6 +112,28 @@ shelf.
 
 ---
 
+## Podcast
+
+**Publish is greyed out.**
+Add the **Web address it will live at** and tick at least one episode. Shows
+made with **No voices** have no audio and cannot be published.
+
+**GitHub says a file is too big to upload.**
+GitHub's upload page takes files up to 25 MB, about 30 minutes at Standard
+quality. Choose **Small** quality and publish again, or upload with GitHub
+Desktop, which takes files up to 100 MB.
+
+**The website shows but podcast apps say the feed is broken.**
+The web address in the Podcast tab must match where the files really are,
+including the repository name, and it must end up at `…/feed.xml`. Fix the
+address, press **Publish** again and upload `feed.xml` and `index.html` again.
+
+**Apple or Spotify rejects the cover.**
+They want a square image between 1400×1400 and 3000×3000 pixels. The Podcast
+tab warns you when an uploaded cover is outside that.
+
+---
+
 ## Still stuck?
 
 [Open an issue](https://github.com/Wommper1/ai-talk-radio/issues/new/choose)

@@ -12,7 +12,7 @@ This file has two parts:
 ## Part A: paste into the Video Overview "Customize" box
 
 ```text
-Make an upbeat 6–8 minute tutorial and showcase for "Local Talk Radio", a free, open-source app where two AI hosts talk to each other and the station turns it into a finished radio show, all on the viewer's own computer. Audience: curious non-technical people and hobbyists. Structure: 1) hook with what it does, 2) how it works in one simple picture, 3) step-by-step setup with the Windows download, 4) first show, 5) tour of the coolest features (call-ins, deep dives on your own documents, fake sponsors and ad breaks, opening with a song, memory, King Orion's Realm), 6) tips and honest limits, 7) where to get it. Use only facts from the sources; never invent features, prices or numbers. Friendly, clear, a little playful, like a radio DJ explaining their station.
+Make an upbeat 6–8 minute tutorial and showcase for "Local Talk Radio", a free, open-source app where two AI hosts talk to each other and the station turns it into a finished radio show, all on the viewer's own computer. Audience: curious non-technical people and hobbyists. Structure: 1) hook with what it does, 2) how it works in one simple picture, 3) step-by-step setup with the Windows download, 4) first show, 5) tour of the coolest features (call-ins, deep dives on your own documents, fake sponsors and ad breaks, opening with a song, memory, publishing your shows as a podcast, King Orion's Realm), 6) tips and honest limits, 7) where to get it. Use only facts from the sources; never invent features, prices or numbers. Friendly, clear, a little playful, like a radio DJ explaining their station.
 ```
 
 ---
@@ -228,6 +228,17 @@ refer back to "last week's show" instead of inventing a history.
 goes on air (model, voices, disk space, ad inventory) and separates real
 blockers from recommendations. It also handles backups.
 
+**Publish your shows as a podcast.** The Podcast tab turns the shows you pick
+into a real podcast. Press Publish and the station converts each show to MP3
+and builds a folder with an RSS feed (what podcast apps subscribe to), a small
+website with a player and the full transcript for every episode, transcript
+files podcast apps can display, and cover art (drawn from the title if you do
+not have your own). You upload that folder to a free host such as GitHub Pages;
+your computer itself never goes online. Before publishing it reminds you to
+label episodes as AI-made (on by default), to check voice licenses, and it
+flags any episode that plays a song from your music folder, since you may not
+own the rights to publish it.
+
 **King Orion's Realm (optional, for fun).** The station can be handed over to
 King Orion, a dark-fantasy king, and Maeve, his chronicler, sitting in his hall
 late at night. Connected to a separate game project, everything the King knows
@@ -259,6 +270,8 @@ This is an optional extra, not needed to use the station.
   service that may change. Piper voices are fully offline.
 - Some **Piper voice models have their own licenses** that do not allow
   commercial use. Check before publishing or selling shows.
+- Publishing a podcast builds the files, but **you upload them yourself**
+  (step-by-step instructions are in the app).
 - The Windows download is **not code-signed**, so Windows shows a warning the
   first time.
 - The station is a desktop tool for one person. It must not be exposed to the

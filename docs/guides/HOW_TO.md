@@ -24,6 +24,7 @@ feature, see [the full guide](../GUIDE.md).
 - [Let the hosts remember earlier shows](#let-the-hosts-remember-earlier-shows)
 - [Resume a show that was interrupted](#resume-a-show-that-was-interrupted)
 - [Find, play and download your shows](#find-play-and-download-your-shows)
+- [Publish your shows as a podcast](#publish-your-shows-as-a-podcast)
 - [Free up disk space](#free-up-disk-space)
 - [Back up the station](#back-up-the-station)
 - [Run the setup again](#run-the-setup-again)
@@ -227,6 +228,42 @@ from the last completed line and reuses the voice clips already made.
 
 Each show is a plain folder under `shows/` containing `show.wav` (the finished
 mix) and `show.json` (details and the timed transcript).
+
+## Publish your shows as a podcast
+
+The **Podcast** tab turns the shows you choose into a podcast anyone can
+subscribe to in Apple Podcasts, Spotify, Pocket Casts or any podcast app. The
+station builds a folder; you upload it to a free web host. Your computer never
+goes online.
+
+1. **Pick a home for it first.** On <https://github.com/new>, create a public
+   repository, for example `my-show`. Your podcast will live at
+   `https://YOUR-NAME.github.io/my-show/`.
+2. In **Podcast → Your podcast**, type that address into **Web address it will
+   live at**. Fill in the title and description, and optionally your own cover
+   (a square PNG or JPEG, 1400 to 3000 pixels; otherwise one is drawn for you).
+3. Under **Episodes**, tick the shows to publish. Only ticked shows go out.
+4. Read **Before you publish**. If an episode plays a song from your music
+   folder, it is flagged: only publish it if you own the rights.
+5. Press **Publish**. Each show is converted to MP3 (roughly a tenth of its
+   length; later publishes reuse it) and the feed and website are written.
+6. Press **Open the folder**. In your GitHub repository, click **uploading an
+   existing file**, drag in everything in that folder (including `episodes`)
+   and press **Commit changes**.
+7. In the repository's **Settings → Pages**, choose *Deploy from a branch*,
+   `main`, `/ (root)`, and **Save**. A minute or two later your podcast's
+   website is at the address from step 1, and its feed at
+   `…/feed.xml`.
+8. Paste the feed address into a podcast app to subscribe, or submit it to
+   [Apple Podcasts Connect](https://podcastsconnect.apple.com) and
+   [Spotify for Creators](https://creators.spotify.com) to be listed.
+
+**New episode later?** Tick it, press **Publish** again, and upload the changed
+files the same way. Unticking a show removes its files from the folder; upload
+again (and delete it from the repository) to take it down.
+
+**Preview the website** shows exactly what listeners will see before you
+upload anything.
 
 ## Free up disk space
 

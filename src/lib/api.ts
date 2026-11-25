@@ -23,6 +23,9 @@ import type {
   ScheduleSlot,
   Voice,
   PiperSetupStatus,
+  PodcastJob,
+  PodcastSettings,
+  PodcastState,
 } from "../types";
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
@@ -60,6 +63,26 @@ export const api = {
 
   checkTts: (config: Config) =>
     json<ProbeResult<Voice>>("/api/check/tts", { method: "POST", body: JSON.stringify(config) }),
+
+  podcast: () => json<PodcastState>("/api/podcast"),
+
+  savePodcast: (settings: PodcastSettings) =>
+    json<PodcastState>("/api/podcast", { method: "PUT", body: JSON.stringify(settings) }),
+
+  publishPodcast: () => json<PodcastState>("/api/podcast/publish", { method: "POST" }),
+
+  podcastJob: () => json<PodcastJob>("/api/podcast/job"),
+
+  uploadPodcastCover: async (file: File) => {
+    const res = await fetch("/api/podcast/cover", { method: "POST", headers: { "Content-Type": file.type }, body: file });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    return body as PodcastState;
+  },
+
+  removePodcastCover: () => json<PodcastState>("/api/podcast/cover", { method: "DELETE" }),
+
+  revealPodcast: () => json<{ ok: true; path: string }>("/api/podcast/reveal", { method: "POST" }),
 
   piperSetup: () => json<PiperSetupStatus>("/api/setup/piper"),
 
