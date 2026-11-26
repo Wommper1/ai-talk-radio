@@ -1,0 +1,39 @@
+name: Release title
+
+# Gives every release the same title: "Local Talk Radio" and the version, for
+# example "Local Talk Radio 1.2.0", so a typo in GitHub's release form never
+# sticks. Runs on its own when a release is published.
+#
+# It can also be run by hand from the Actions tab for an existing release tag.
+# That changes only the title; the release's files and notes stay as they are.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to retitle, for example v1.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set the release title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          title="Local Talk Radio ${TAG#v}"
+          current=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json name --jq .name)
+          if [ "$current" = "$title" ]; then
+            echo "Already titled \"$title\"."
+            exit 0
+          fi
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$title"
+          echo "Renamed \"$current\" to \"$title\"."
